@@ -12,16 +12,14 @@ return new class extends Migration {
     {
         Schema::create('orders', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('created_by')->constrained('users')->cascadeOnDelete()->cascadeOnUpdate();
             $table->string('order_number')->unique();
             $table->string('name');
             $table->text('description')->nullable();
-            $table->unsignedBigInteger('created_by');
             $table->enum('status', ['pending', 'in_progress', 'completed', 'approved'])->default('pending');
             $table->dateTime('completed_at')->nullable();
             $table->dateTime('approved_at')->nullable();
             $table->timestamps();
-
-            $table->foreign('created_by')->references('id')->on('users');
         });
     }
 

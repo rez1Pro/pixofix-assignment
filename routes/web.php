@@ -25,13 +25,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
-    Route::get('/dashboard', fn() => Inertia::render('Dashboard'))->name('dashboard');
-    Route::get('/order-management', fn() => Inertia::render('OrderManagement'))->name('order-management');
+    Route::get('/dashboard', [OrderController::class, 'dashboard'])->name('dashboard');
+    Route::get('/order-management', [OrderController::class, 'index'])->name('order-management');
 
     // Orders Routes
     Route::resource('orders', OrderController::class);
-    Route::post('orders/{order}/mark-completed', [OrderController::class, 'markAsCompleted'])->name('orders.mark-completed');
-    Route::post('orders/{order}/approve', [OrderController::class, 'approve'])->name('orders.approve');
+    Route::post('/orders/{order}/mark-completed', [OrderController::class, 'markAsCompleted'])
+        ->name('orders.mark-completed');
+    Route::post('/orders/{order}/approve', [OrderController::class, 'approve'])
+        ->name('orders.approve');
 
     // Files Routes
     Route::get('orders/{order}/files', [FileController::class, 'index'])->name('files.index');
@@ -41,6 +43,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::patch('files/{file}', [FileController::class, 'update'])->name('files.update');
     Route::delete('files/{file}', [FileController::class, 'destroy'])->name('files.destroy');
     Route::get('files/{file}/download', [FileController::class, 'download'])->name('files.download');
+    Route::post('orders/{order}/files/download-selected', [FileController::class, 'downloadSelected'])->name('files.download-selected');
     Route::get('files/{file}/preview', [FileController::class, 'preview'])->name('files.preview');
     Route::post('files/{file}/upload-processed', [FileController::class, 'uploadProcessed'])->name('files.upload-processed');
 

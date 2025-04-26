@@ -12,16 +12,13 @@ return new class extends Migration {
     {
         Schema::create('file_claims', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('user_id');
-            $table->unsignedBigInteger('order_id');
+            $table->foreignId('user_id')->constrained('users')->cascadeOnDelete()->cascadeOnUpdate();
+            $table->foreignId('order_id')->constrained('orders')->cascadeOnDelete()->cascadeOnUpdate();
             $table->json('file_ids');
             $table->timestamp('claimed_at');
             $table->timestamp('completed_at')->nullable();
             $table->boolean('is_completed')->default(false);
             $table->timestamps();
-
-            $table->foreign('user_id')->references('id')->on('users');
-            $table->foreign('order_id')->references('id')->on('orders')->onDelete('cascade');
         });
     }
 

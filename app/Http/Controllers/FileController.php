@@ -206,4 +206,56 @@ class FileController extends Controller
         return redirect()->back()
             ->with('success', 'Processed file uploaded successfully.');
     }
+
+    /**
+     * Download selected files as a zip archive
+     */
+    public function downloadSelected(Request $request, Order $order)
+    {
+        $request->validate([
+            'fileIds' => 'required|array',
+            'fileIds.*' => 'required|integer|exists:file_items,id'
+        ]);
+
+        $fileIds = $request->input('fileIds');
+        $files = FileItem::whereIn('id', $fileIds)->where('order_id', $order->id)->get();
+
+        if ($files->isEmpty()) {
+            return redirect()->back()->with('error', 'No files selected for download');
+        }
+
+        $zipName = "order_{$order->id}_selected_files.zip";
+        $zipPath = storage_path("app/temp/{$zipName}");
+
+        // Ensure the temp directory exists
+        if (!file_exists(storage_path('app/temp'))) {
+            mkdir(storage_path('app/temp'), 0755, true);
+        }
+
+        // Create new zip archive
+        $zip = new \ZipArchive();
+        if ($zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
+            return redirect()->back()->with('error', 'Could not create zip file');
+        }
+
+        // Add files to the zip
+        foreach ($files as $file) {
+            if (Storage::exists($file->filepath)) {
+                // Use original filename instead of just the basename
+                // Add directory prefix if available to avoid filename collisions
+                $fileNameInZip = $file->original_filename;
+
+                // If files have the same name but are in different directories, prefix with directory path
+                if ($file->directory_path) {
+                    $fileNameInZip = str_replace('/', '_', $file->directory_path) . '_' . $fileNameInZip;
+                }
+
+                $zip->addFile(storage_path("app/{$file->filepath}"), $fileNameInZip);
+            }
+        }
+
+        $zip->close();
+
+        return response()->download($zipPath, $zipName)->deleteFileAfterSend(true);
+    }
 }

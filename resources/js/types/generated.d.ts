@@ -25,7 +25,7 @@ approved_at: string | null;
 created_at: string;
 updated_at: string;
 creator: App.Data.UserData;
-fileItems: Array<App.Data.FileItemData> | null;
+fileItems: any | null;
 stats: Array<any> | null;
 };
 export type RoleData = {

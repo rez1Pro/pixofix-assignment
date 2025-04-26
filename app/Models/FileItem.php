@@ -20,6 +20,7 @@ class FileItem extends Model
         'file_size',
         'is_processed',
         'status',
+        'assigned_to',
     ];
 
     protected $casts = [
@@ -33,6 +34,14 @@ class FileItem extends Model
     public function order(): BelongsTo
     {
         return $this->belongsTo(Order::class);
+    }
+
+    /**
+     * Get the user that this file is assigned to.
+     */
+    public function assignedUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_to');
     }
 
     /**

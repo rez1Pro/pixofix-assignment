@@ -12,7 +12,8 @@ return new class extends Migration {
     {
         Schema::create('file_items', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('order_id');
+            $table->foreignId('order_id')->constrained('orders')->cascadeOnDelete()->cascadeOnUpdate();
+            $table->foreignId('assigned_to')->nullable()->constrained('users')->nullOnDelete();
             $table->string('filename');
             $table->string('original_filename');
             $table->string('filepath');
@@ -22,8 +23,6 @@ return new class extends Migration {
             $table->boolean('is_processed')->default(false);
             $table->enum('status', ['pending', 'claimed', 'processing', 'completed'])->default('pending');
             $table->timestamps();
-
-            $table->foreign('order_id')->references('id')->on('orders')->onDelete('cascade');
         });
     }
 

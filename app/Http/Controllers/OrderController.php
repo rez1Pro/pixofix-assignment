@@ -22,6 +22,13 @@ class OrderController extends Controller
         $this->fileItemService = $fileItemService;
     }
 
+    public function dashboard()
+    {
+        return Inertia::render('OrderManagement', [
+            //
+        ]);
+    }
+
     /**
      * Display a listing of the resource.
      */

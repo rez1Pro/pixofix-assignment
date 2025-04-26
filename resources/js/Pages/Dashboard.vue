@@ -1,243 +1,205 @@
 <script setup lang="ts">
-import { ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head } from '@inertiajs/vue3';
-import {
-    ChartBarIcon,
-    UsersIcon,
-    CurrencyDollarIcon,
-    ShoppingCartIcon,
-} from '@heroicons/vue/24/outline';
-import { Line, Bar, Doughnut } from 'vue-chartjs';
-import {
-    Chart as ChartJS,
-    Title,
-    Tooltip,
-    Legend,
-    LineElement,
-    LinearScale,
-    PointElement,
-    CategoryScale,
-    BarElement,
-    ArcElement
-} from 'chart.js';
+import { FolderIcon, PlusIcon } from '@heroicons/vue/24/outline';
+import { Head, Link } from '@inertiajs/vue3';
+import { PropType, reactive, ref } from 'vue';
+// @ts-ignore
+import type { PaginatedResponse } from 'vue3-lara-table';
 
-ChartJS.register(
-    Title,
-    Tooltip,
-    Legend,
-    LineElement,
-    LinearScale,
-    PointElement,
-    CategoryScale,
-    BarElement,
-    ArcElement
-);
+interface OrderData {
+    id: number;
+    order_number: string;
+    name: string;
+    description: string | null;
+    created_by: number;
+    status: string;
+    completed_at: string | null;
+    approved_at: string | null;
+    created_at: string;
+    updated_at: string;
+    creator: {
+        name: string;
+    };
+    stats?: {
+        total: number;
+        pending: number;
+        claimed: number;
+        completed: number;
+    };
+}
 
-const stats = [
-    {
-        name: 'Total Revenue',
-        value: '$45,231.89',
-        change: '+20.1%',
-        changeType: 'positive',
-        icon: CurrencyDollarIcon,
-    },
-    {
-        name: 'Active Users',
-        value: '2,338',
-        change: '+15.3%',
-        changeType: 'positive',
-        icon: UsersIcon,
-    },
-    {
-        name: 'New Orders',
-        value: '182',
-        change: '-3.2%',
-        changeType: 'negative',
-        icon: ShoppingCartIcon,
-    },
-    {
-        name: 'Growth Rate',
-        value: '32.5%',
-        change: '+2.4%',
-        changeType: 'positive',
-        icon: ChartBarIcon,
-    },
-];
+const props = defineProps({
+    orders: Object as PropType<PaginatedResponse<OrderData>>,
+});
 
-const recentActivities = [
-    {
-        user: 'John Doe',
-        action: 'created a new order',
-        time: '2 minutes ago',
-        avatar: 'https://ui-avatars.com/api/?name=John+Doe&background=6366f1&color=fff',
-    },
-    // Add more activities...
-];
+const statusFilter = ref('');
 
-const topProducts = [
-    {
-        name: 'Product A',
-        sales: 245,
-        revenue: '$12,480',
-        growth: '+28%',
-    },
-    // Add more products...
-];
-
-// Chart Data
-const salesData = {
-    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-    datasets: [
-        {
-            label: 'Sales',
-            data: [30, 45, 35, 50, 40, 60],
-            fill: true,
-            borderColor: '#4F46E5',
-            backgroundColor: 'rgba(79, 70, 229, 0.1)',
-            tension: 0.4
-        }
-    ]
-};
-
-const revenueData = {
-    labels: ['Q1', 'Q2', 'Q3', 'Q4'],
-    datasets: [
-        {
-            label: 'Revenue',
-            data: [12000, 19000, 15000, 25000],
-            backgroundColor: [
-                'rgba(79, 70, 229, 0.8)',
-                'rgba(59, 130, 246, 0.8)',
-                'rgba(16, 185, 129, 0.8)',
-                'rgba(245, 158, 11, 0.8)'
-            ],
-            borderRadius: 6
-        }
-    ]
-};
-
-const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-        legend: {
-            position: 'bottom' as const
-        }
-    },
-    scales: {
-        y: {
-            beginAtZero: true,
-            grid: {
-                display: false
-            }
-        },
-        x: {
-            grid: {
-                display: false
-            }
-        }
+const getStatusClass = (status: string): string => {
+    switch (status) {
+        case 'pending':
+            return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
+        case 'in_progress':
+            return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
+        case 'completed':
+            return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
+        case 'approved':
+            return 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200';
+        default:
+            return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
     }
 };
+
+const getStatusText = (status: string): string => {
+    switch (status) {
+        case 'pending':
+            return 'Pending';
+        case 'in_progress':
+            return 'In Progress';
+        case 'completed':
+            return 'Completed';
+        case 'approved':
+            return 'Approved';
+        default:
+            return status;
+    }
+};
+
+const formatDate = (dateString: string): string => {
+    const date = new Date(dateString);
+    return new Intl.DateTimeFormat('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    }).format(date);
+};
+
+const columns = reactive([
+    { label: 'Order', key: 'order' },
+    { label: 'Status', key: 'status' },
+    { label: 'Progress', key: 'progress' },
+    { label: 'Created', key: 'created_at' },
+    { label: 'Created By', key: 'creator' },
+    { label: 'Actions', key: 'actions' },
+]);
+
+const filters = reactive([
+    {
+        key: 'status',
+        label: 'Status',
+        type: 'select',
+        options: [
+            { value: '', label: 'All Status' },
+            { value: 'pending', label: 'Pending' },
+            { value: 'in_progress', label: 'In Progress' },
+            { value: 'completed', label: 'Completed' },
+            { value: 'approved', label: 'Approved' },
+        ],
+    },
+]);
 </script>
 
 <template>
+    <AuthenticatedLayout header="Orders" description="Manage your orders">
 
-    <Head title="Dashboard" />
+        <Head title="Orders" />
 
-    <AuthenticatedLayout header="Welcome back, Admin!" description="Here's what's happening with your business today.">
         <div class="space-y-6">
-            <!-- Stats Grid -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div v-for="stat in stats" :key="stat.name"
-                    class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 hover:shadow-md transition-shadow">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ stat.name }}</p>
-                            <p class="mt-2 text-3xl font-semibold text-gray-900 dark:text-white">{{ stat.value }}</p>
+            <div
+                class="overflow-hidden p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow">
+                <LaraTable :columns="columns" :items="props.orders" :filters="filters" search-key="name" enableAddItem
+                    :classes="{
+                        paginationActiveButton: 'bg-indigo-600 text-white dark:bg-indigo-500 dark:text-white',
+                    }">
+                    <template #add-item>
+                        <div class="flex justify-end items-center">
+                            <Link href="/orders/create"
+                                class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:bg-indigo-500 dark:hover:bg-indigo-400">
+                            <PlusIcon class="h-5 w-5 mr-2" />
+                            Create Order
+                            </Link>
                         </div>
-                        <div :class="[
-                            'p-3 rounded-lg',
-                            stat.changeType === 'positive' ? 'bg-green-50 dark:bg-green-900/20' : 'bg-red-50 dark:bg-red-900/20'
-                        ]">
-                            <component :is="stat.icon" :class="[
-                                'w-6 h-6',
-                                stat.changeType === 'positive' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                            ]" />
+                    </template>
+
+                    <template #order="{ item }">
+                        <div class="flex items-center">
+                            <div
+                                class="flex-shrink-0 h-10 w-10 flex items-center justify-center rounded-md bg-indigo-100 dark:bg-indigo-900">
+                                <FolderIcon class="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
+                            </div>
+                            <div class="ml-4">
+                                <div class="text-sm font-medium text-gray-900 dark:text-white">
+                                    {{ item.name }}
+                                </div>
+                                <div class="text-sm text-gray-500 dark:text-gray-400">
+                                    {{ item.order_number }}
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                    <div class="mt-4 flex items-center">
+                    </template>
+
+                    <template #status="{ item }">
                         <span :class="[
-                            'text-sm font-medium',
-                            stat.changeType === 'positive' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                            'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
+                            getStatusClass(item.status)
                         ]">
-                            {{ stat.change }}
+                            {{ getStatusText(item.status) }}
                         </span>
-                        <span class="ml-2 text-sm text-gray-500 dark:text-gray-400">from last month</span>
-                    </div>
-                </div>
-            </div>
+                    </template>
 
-            <!-- Charts Section -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <!-- Sales Chart -->
-                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6">
-                    <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Sales Overview</h2>
-                    <div class="mt-4 h-80">
-                        <Line :data="salesData" :options="chartOptions" />
-                    </div>
-                </div>
+                    <template #progress="{ item }">
+                        <div v-if="item.stats && item.stats.total > 0" class="w-36">
+                            <div class="text-xs mb-1">
+                                {{ item.stats.completed }} / {{ item.stats.total }} files
+                            </div>
+                            <div class="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                <div class="h-full bg-indigo-600 dark:bg-indigo-400"
+                                    :style="{ width: `${(item.stats.completed / item.stats.total) * 100}%` }">
+                                </div>
+                            </div>
+                        </div>
+                        <div v-else class="text-gray-500 dark:text-gray-400 text-sm">No files</div>
+                    </template>
 
-                <!-- Revenue Chart -->
-                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6">
-                    <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Revenue Analytics</h2>
-                    <div class="mt-4 h-80">
-                        <Bar :data="revenueData" :options="chartOptions" />
-                    </div>
-                </div>
-            </div>
+                    <template #created_at="{ item }">
+                        {{ formatDate(item.created_at) }}
+                    </template>
 
-            <!-- Bottom Grid -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <!-- Recent Activities -->
-                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6">
-                    <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Recent Activities</h2>
-                    <div class="mt-4 space-y-4">
-                        <div v-for="(activity, index) in recentActivities" :key="index"
-                            class="flex items-center space-x-4">
-                            <img :src="activity.avatar" :alt="activity.user" class="w-10 h-10 rounded-full" />
-                            <div class="flex-1">
-                                <p class="text-sm text-gray-900 dark:text-gray-100">
-                                    <span class="font-medium">{{ activity.user }}</span>
-                                    {{ activity.action }}
+                    <template #creator="{ item }">
+                        {{ item.creator?.name || 'Unknown' }}
+                    </template>
+
+                    <template #actions="{ item }">
+                        <div class="flex gap-2">
+                            <Link :href="`/orders/${item.id}`"
+                                class="px-4 py-2 text-sm font-medium bg-indigo-500 text-white rounded-md hover:bg-indigo-600 dark:bg-indigo-600 dark:hover:bg-indigo-500">
+                            View
+                            </Link>
+                            <Link :href="`/orders/${item.id}/edit`"
+                                class="px-4 py-2 text-sm font-medium bg-gray-900 text-white rounded-md hover:bg-gray-800 dark:bg-gray-900 dark:hover:bg-gray-800">
+                            Edit
+                            </Link>
+                        </div>
+                    </template>
+
+                    <template #empty-state>
+                        <div class="px-6 py-10 text-center text-gray-500 dark:text-gray-400">
+                            <div class="flex flex-col items-center justify-center">
+                                <FolderIcon class="h-12 w-12 text-gray-400 dark:text-gray-500 mb-4" />
+                                <h3 class="text-sm font-medium text-gray-900 dark:text-white mb-1">No orders found</h3>
+                                <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                                    Get started by creating a new order.
                                 </p>
-                                <p class="text-xs text-gray-500 dark:text-gray-400">{{ activity.time }}</p>
+                                <Link href="/orders/create"
+                                    class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:bg-indigo-500 dark:hover:bg-indigo-400">
+                                <PlusIcon class="h-5 w-5 mr-2" />
+                                Create Order
+                                </Link>
                             </div>
                         </div>
-                    </div>
-                </div>
-
-                <!-- Top Products -->
-                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6">
-                    <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Top Products</h2>
-                    <div class="mt-4">
-                        <div class="space-y-4">
-                            <div v-for="(product, index) in topProducts" :key="index"
-                                class="flex items-center justify-between">
-                                <div>
-                                    <p class="text-sm font-medium text-gray-900 dark:text-gray-100">{{ product.name }}
-                                    </p>
-                                    <p class="text-xs text-gray-500 dark:text-gray-400">{{ product.sales }} sales</p>
-                                </div>
-                                <div class="text-right">
-                                    <p class="text-sm font-medium text-gray-900 dark:text-gray-100">{{ product.revenue
-                                        }}</p>
-                                    <p class="text-xs text-green-600 dark:text-green-400">{{ product.growth }}</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                    </template>
+                </LaraTable>
             </div>
         </div>
     </AuthenticatedLayout>

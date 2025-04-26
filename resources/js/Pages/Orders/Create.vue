@@ -9,14 +9,21 @@ import {
 import { Head, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
 
+interface FilePreview {
+    url: string;
+    name: string;
+    size: string;
+    index: number;
+}
+
 const form = useForm({
     name: '',
     description: '',
-    files: [],
+    files: [] as File[],
 });
 
-const fileInputRef = ref(null);
-const filePreviewUrls = ref([]);
+const fileInputRef = ref<HTMLInputElement | null>(null);
+const filePreviewUrls = ref<FilePreview[]>([]);
 const dragOver = ref(false);
 
 const submitForm = () => {
@@ -30,7 +37,7 @@ const submitForm = () => {
     });
 };
 
-const addFiles = (files) => {
+const addFiles = (files: FileList) => {
     if (!files || files.length === 0) return;
 
     const newFiles = [...form.files];
@@ -53,19 +60,23 @@ const addFiles = (files) => {
     filePreviewUrls.value = newPreviewUrls;
 };
 
-const handleFileSelect = (event) => {
-    const files = event.target.files;
-    addFiles(files);
+const handleFileSelect = (event: Event) => {
+    const files = (event.target as HTMLInputElement).files;
+    if (files) {
+        addFiles(files);
+    }
 };
 
-const handleFileDrop = (event) => {
+const handleFileDrop = (event: DragEvent) => {
     event.preventDefault();
     dragOver.value = false;
-    const files = event.dataTransfer.files;
-    addFiles(files);
+    const files = event.dataTransfer?.files;
+    if (files) {
+        addFiles(files);
+    }
 };
 
-const handleDragOver = (event) => {
+const handleDragOver = (event: DragEvent) => {
     event.preventDefault();
     dragOver.value = true;
 };
@@ -74,13 +85,13 @@ const handleDragLeave = () => {
     dragOver.value = false;
 };
 
-const removeFile = (index) => {
+const removeFile = (index: number) => {
     const newFiles = [...form.files];
     newFiles.splice(index, 1);
     form.files = newFiles;
 
     const newPreviewUrls = filePreviewUrls.value.filter(item => item.index !== index);
-    newPreviewUrls.forEach((item, i) => {
+    newPreviewUrls.forEach((item) => {
         if (item.index > index) {
             item.index -= 1;
         }
@@ -89,10 +100,12 @@ const removeFile = (index) => {
 };
 
 const triggerFileInput = () => {
-    fileInputRef.value.click();
+    if (fileInputRef.value) {
+        fileInputRef.value.click();
+    }
 };
 
-const formatFileSize = (size) => {
+const formatFileSize = (size: number): string => {
     if (size < 1024) {
         return size + ' B';
     } else if (size < 1024 * 1024) {
