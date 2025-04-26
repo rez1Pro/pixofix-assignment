@@ -2,8 +2,12 @@
 
 namespace App\Providers;
 
+use App\Interfaces\FileItemServiceInterface;
+use App\Interfaces\OrderServiceInterface;
 use App\Interfaces\RoleServiceInterface;
 use App\Interfaces\UserServiceInterface;
+use App\Services\FileItemService;
+use App\Services\OrderService;
 use App\Services\RoleService;
 use App\Services\UserService;
 use Illuminate\Support\Facades\Vite;
@@ -18,6 +22,8 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->app->bind(RoleServiceInterface::class, RoleService::class);
         $this->app->bind(UserServiceInterface::class, UserService::class);
+        $this->app->bind(OrderServiceInterface::class, OrderService::class);
+        $this->app->bind(FileItemServiceInterface::class, FileItemService::class);
     }
 
     /**

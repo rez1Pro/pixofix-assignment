@@ -32,11 +32,11 @@ const navigation = reactive<Navigation[]>([
         permissions: ['any']
     },
     {
-        name: 'Example',
-        href: route('example'),
+        name: 'Order & File Management',
+        href: route('order-management'),
         icon: ExclamationCircleIcon,
-        current: route().current('example'),
-        permissions: ['view:example']
+        current: route().current('order-management') || route().current('orders.*') || route().current('files.*') || route().current('claims.*'),
+        permissions: ['view:orders', 'view:files', 'view:claims']
     },
     {
         name: 'Users',
@@ -49,7 +49,7 @@ const navigation = reactive<Navigation[]>([
                 name: 'All Users',
                 href: route('users.index'),
                 icon: UserGroupIcon,
-                current: route().current('users.index'),
+                current: route().current('users.index') || route().current('users.create') || route().current('users.edit') || route().current('users.show'),
                 permission: 'user:view'
             },
             {

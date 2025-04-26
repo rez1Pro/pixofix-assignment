@@ -30,12 +30,13 @@ const columns = [
 
     <Head title="Role Management" />
 
-    <AuthenticatedLayout header="Role Management" description="Manage user roles and their permissions"
-        :breadcrumbs="breadcrumbs">
+    <AuthenticatedLayout header="Role Management" description="Manage user roles and their permissions">
         <div class="space-y-6">
             <!-- Roles List -->
             <div class="border rounded-lg p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-                <LaraTable :columns="columns" :items="props.roles" search-key="name" enableAddItem>
+                <LaraTable :columns="columns" :items="props.roles" search-key="name" enableAddItem :classes="{
+                    paginationActiveButton: 'bg-blue-200 text-blue-900 dark:bg-gray-600 dark:text-white',
+                }">
                     <template #add-item>
                         <div class="flex justify-end items-center">
                             <Link :href="route('users.roles.create')"
