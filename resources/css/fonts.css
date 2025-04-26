@@ -1,0 +1,34 @@
+/* Font Feature Settings */
+.font-features {
+    font-feature-settings: 'salt' on, 'ss01' on, 'ss02' on, 'ss03' on;
+}
+
+/* Font Variants */
+.font-tabular {
+    font-variant-numeric: tabular-nums;
+}
+
+.font-proportional {
+    font-variant-numeric: proportional-nums;
+}
+
+/* Text Rendering */
+.text-rendering-optimized {
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom Font Classes */
+.font-display {
+    font-variation-settings: 'wght' 600;
+    letter-spacing: -0.025em;
+}
+
+.font-body {
+    font-variation-settings: 'wght' 400;
+}
+
+.font-medium {
+    font-variation-settings: 'wght' 500;
+}
