@@ -5,151 +5,117 @@ namespace App\Http\Controllers;
 use App\Models\FileClaim;
 use App\Models\FileItem;
 use App\Models\Order;
+use App\Services\FileBatchService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 
 class FileClaimController extends Controller
 {
+    protected FileBatchService $fileBatchService;
+
+    public function __construct(FileBatchService $fileBatchService)
+    {
+        $this->fileBatchService = $fileBatchService;
+    }
+
     /**
-     * Display a listing of all claims for the user
+     * Display a listing of the claims for the authenticated user.
      */
     public function index()
     {
-        $claims = FileClaim::with(['order'])
-            ->where('user_id', Auth::id())
-            ->orderBy('created_at', 'desc')
-            ->paginate(10);
+        $user = Auth::user();
+        $claims = $this->fileBatchService->getUserActiveBatches($user);
 
-        return Inertia::render('Claims/Index', [
+        return Inertia::render('FileClaims/Index', [
             'claims' => $claims,
         ]);
     }
 
     /**
-     * Claim files from an order
+     * Display the specified claim with its files.
+     */
+    public function show(FileClaim $fileclaim)
+    {
+        $files = $this->fileBatchService->getBatchFiles($fileclaim);
+        $stats = $this->fileBatchService->getBatchStats($fileclaim);
+
+        return Inertia::render('FileClaims/Show', [
+            'claim' => $fileclaim,
+            'files' => $files,
+            'stats' => $stats,
+            'order' => $fileclaim->order,
+        ]);
+    }
+
+    /**
+     * Claim a batch of files for an order.
      */
     public function claimFiles(Request $request, Order $order)
     {
         $request->validate([
-            'max_files' => 'nullable|integer|min:1|max:20',
+            'batch_size' => 'required|integer|min:1|max:50',
+            'directory' => 'nullable|string',
         ]);
 
-        $maxFiles = $request->max_files ?? 10;
+        $user = Auth::user();
+        $batchSize = $request->input('batch_size');
+        $directory = $request->input('directory');
 
-        // Get files that are available for claiming (status = pending)
-        $availableFiles = $order->fileItems()
-            ->where('status', 'pending')
-            ->take($maxFiles)
-            ->get();
+        $fileClaim = $this->fileBatchService->claimBatch($order, $user, $batchSize, $directory);
 
-        if ($availableFiles->isEmpty()) {
-            return redirect()->back()
-                ->with('error', 'No files available for claiming.');
+        if (!$fileClaim) {
+            return redirect()->back()->with('error', 'No files available to claim');
         }
 
-        // Create a claim
-        $claim = FileClaim::create([
-            'user_id' => Auth::id(),
-            'order_id' => $order->id,
-            'file_ids' => $availableFiles->pluck('id')->toArray(),
-            'claimed_at' => now(),
-            'is_completed' => false,
-        ]);
-
-        // Mark files as claimed
-        $availableFiles->each(function ($file) {
-            $file->markAsClaimed();
-        });
-
-        // Update order status to in_progress if it was pending
-        if ($order->status === 'pending') {
-            $order->update(['status' => 'in_progress']);
-        }
-
-        return redirect()->route('claims.show', $claim->id)
-            ->with('success', 'Successfully claimed ' . $availableFiles->count() . ' files.');
+        return redirect()->route('fileclaims.show', $fileClaim->id)
+            ->with('success', 'Successfully claimed a batch of ' . count($fileClaim->file_ids) . ' files');
     }
 
     /**
-     * Show a claim with its files
+     * Mark a claim as completed.
      */
-    public function show(FileClaim $claim)
+    public function complete(FileClaim $fileclaim)
     {
-        // Ensure the user can only view their own claims
-        if ($claim->user_id !== Auth::id()) {
-            abort(403, 'Unauthorized action.');
+        // Authorization check - only the owner can complete a claim
+        if ($fileclaim->user_id !== Auth::id()) {
+            return redirect()->back()->with('error', 'You are not authorized to complete this claim');
         }
 
-        $claim->load('order');
-        $files = FileItem::whereIn('id', $claim->file_ids)->get();
-
-        return Inertia::render('Claims/Show', [
-            'claim' => $claim,
-            'files' => $files,
-            'order' => $claim->order,
-        ]);
-    }
-
-    /**
-     * Mark a claim as completed
-     */
-    public function markCompleted(FileClaim $claim)
-    {
-        // Ensure the user can only complete their own claims
-        if ($claim->user_id !== Auth::id()) {
-            abort(403, 'Unauthorized action.');
-        }
-
-        $claim->markAsCompleted();
-
-        // Check if the order is now fully completed
-        $order = $claim->order;
-        if ($order->isCompleted()) {
-            $order->update([
-                'status' => 'completed',
-                'completed_at' => now(),
-            ]);
-        }
+        $this->fileBatchService->completeBatch($fileclaim);
 
         return redirect()->route('claims.index')
-            ->with('success', 'Claim marked as completed.');
+            ->with('success', 'Batch marked as completed');
     }
 
     /**
-     * Return files back to the queue for others to claim
+     * Release a claim (return files to the pool)
      */
-    public function returnFiles(FileClaim $claim)
+    public function release(FileClaim $fileclaim)
     {
-        // Ensure the user can only return their own claims
-        if ($claim->user_id !== Auth::id()) {
-            abort(403, 'Unauthorized action.');
+        // Authorization check - only the owner can release a claim
+        if ($fileclaim->user_id !== Auth::id()) {
+            return redirect()->back()->with('error', 'You are not authorized to release this claim');
         }
 
-        // Mark the files as pending again
-        FileItem::whereIn('id', $claim->file_ids)
-            ->update(['status' => 'pending']);
-
-        // Delete the claim
-        $claim->delete();
+        $this->fileBatchService->releaseBatch($fileclaim);
 
         return redirect()->route('claims.index')
-            ->with('success', 'Files returned to the queue.');
+            ->with('success', 'Files released successfully');
     }
 
     /**
-     * List active claims for an order (admin view)
+     * List all claims for an order (admin view)
      */
     public function orderClaims(Order $order)
     {
-        $claims = FileClaim::with('user')
-            ->where('order_id', $order->id)
-            ->orderBy('claimed_at', 'desc')
-            ->paginate(10);
+        $claims = FileClaim::where('order_id', $order->id)
+            ->with(['user'])
+            ->get();
 
-        return Inertia::render('Claims/OrderClaims', [
-            'claims' => $claims,
+        return Inertia::render('Orders/Claims', [
             'order' => $order,
+            'claims' => $claims,
         ]);
     }
 }

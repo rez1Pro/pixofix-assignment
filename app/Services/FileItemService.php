@@ -15,6 +15,13 @@ use Spatie\LaravelData\DataCollection;
 
 class FileItemService implements FileItemServiceInterface
 {
+    protected FileNamingService $fileNamingService;
+
+    public function __construct(FileNamingService $fileNamingService)
+    {
+        $this->fileNamingService = $fileNamingService;
+    }
+
     /**
      * Get all file items for an order
      */
@@ -39,23 +46,22 @@ class FileItemService implements FileItemServiceInterface
     public function processFiles(Order $order, array $files): void
     {
         foreach ($files as $file) {
-            $originalFilename = $file->getClientOriginalName();
-            $extension = $file->getClientOriginalExtension();
-            $fileSize = $file->getSize();
-            $filename = pathinfo($originalFilename, PATHINFO_FILENAME) . '_' . time() . '.' . $extension;
+            // Use the FileNamingService to generate a proper filename
+            $fileInfo = $this->fileNamingService->generateFilename($file, $order);
+            $filename = $fileInfo['filename'];
+            $originalFilename = $fileInfo['originalFilename'];
+            $directoryPath = $fileInfo['directoryPath'];
 
-            // Parse directory path from filename if it's in a structure like "folder1/folder2/filename.ext"
-            $directoryPath = null;
-            if (strpos($originalFilename, '/') !== false) {
-                $parts = explode('/', $originalFilename);
-                $filename = array_pop($parts);
-                $directoryPath = implode('/', $parts);
-            }
+            $fileSize = $file->getSize();
+            $extension = $file->getClientOriginalExtension();
+
+            // Generate the storage path
+            $storagePath = $this->fileNamingService->generateStoragePath($order, $directoryPath, $filename);
 
             // Store file in the storage
             $filepath = $file->storeAs(
-                "orders/{$order->id}" . ($directoryPath ? "/{$directoryPath}" : ""),
-                $filename
+                dirname($storagePath),
+                basename($storagePath)
             );
 
             // Create file record
@@ -113,8 +119,7 @@ class FileItemService implements FileItemServiceInterface
         $groupedFiles = [];
 
         foreach ($fileItems as $file) {
-            $directory = dirname($file->path);
-            $directory = str_replace('orders/' . $order->id . '/', '', $directory);
+            $directory = $file->directory_path ?? 'root';
 
             if (!isset($groupedFiles[$directory])) {
                 $groupedFiles[$directory] = [];
@@ -134,10 +139,8 @@ class FileItemService implements FileItemServiceInterface
      */
     public function getFileItemsByDirectory(Order $order, string $directory): Collection
     {
-        $searchDirectory = 'orders/' . $order->id . '/' . ltrim($directory, '/');
-
         return $order->fileItems()
-            ->where('path', 'like', $searchDirectory . '/%')
+            ->where('directory_path', $directory)
             ->get();
     }
 
@@ -174,36 +177,35 @@ class FileItemService implements FileItemServiceInterface
     private function uploadFile(Order $order, UploadedFile $file): FileItem
     {
         try {
-            // Generate a unique filename
-            $originalFilename = $file->getClientOriginalName();
-            $extension = $file->getClientOriginalExtension();
+            // Use the FileNamingService to generate consistent filenames
+            $fileInfo = $this->fileNamingService->generateFilename($file, $order);
+            $filename = $fileInfo['filename'];
+            $originalFilename = $fileInfo['originalFilename'];
+            $directoryPath = $fileInfo['directoryPath'];
+
             $fileSize = $file->getSize();
-            $filename = pathinfo($originalFilename, PATHINFO_FILENAME) . '_' . time() . '.' . $extension;
+            $mimeType = $file->getMimeType();
+            $extension = $file->getClientOriginalExtension();
 
-            // Determine directory path
-            $directoryPath = '';
-            if (strpos($originalFilename, '/') !== false) {
-                $parts = explode('/', $originalFilename);
-                $filename = array_pop($parts);
-                $directoryPath = implode('/', $parts);
-            }
+            // Generate the storage path
+            $storagePath = $this->fileNamingService->generateStoragePath($order, $directoryPath, $filename);
 
-            // Store file in storage
+            // Store the file
             $path = $file->storeAs(
-                "orders/{$order->id}" . ($directoryPath ? "/{$directoryPath}" : ""),
-                $filename
+                dirname($storagePath),
+                basename($storagePath)
             );
 
             // Create database record
             $fileItem = FileItem::create([
                 'order_id' => $order->id,
-                'name' => $filename,
-                'original_name' => $originalFilename,
-                'path' => $path,
-                'directory' => $directoryPath,
-                'type' => $extension,
-                'size' => $fileSize,
-                'mime_type' => $file->getMimeType(),
+                'filename' => $filename,
+                'original_filename' => $originalFilename,
+                'filepath' => $path,
+                'directory_path' => $directoryPath,
+                'file_type' => $extension,
+                'file_size' => $fileSize,
+                'mime_type' => $mimeType,
                 'status' => 'pending',
             ]);
 
@@ -220,11 +222,43 @@ class FileItemService implements FileItemServiceInterface
     public function deleteFile(FileItem $file): bool
     {
         // Delete from storage
-        if (Storage::exists($file->path)) {
-            Storage::delete($file->path);
+        if (Storage::exists($file->filepath)) {
+            Storage::delete($file->filepath);
         }
 
         // Delete from database
         return $file->delete();
+    }
+
+    /**
+     * Process (replace) a file after editing
+     */
+    public function processEditedFile(FileItem $file, UploadedFile $processedFile): FileItem
+    {
+        DB::beginTransaction();
+        try {
+            // Delete the existing file if it exists
+            if (Storage::exists($file->filepath)) {
+                Storage::delete($file->filepath);
+            }
+
+            // Store the processed file with a proper filename in the original location
+            $newFilepath = $this->fileNamingService->storeProcessedFile($file, $processedFile);
+
+            // Update the file record
+            $file->update([
+                'filepath' => $newFilepath,
+                'is_processed' => true,
+                'status' => 'completed',
+                'file_size' => $processedFile->getSize(),
+            ]);
+
+            DB::commit();
+            return $file;
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('File processing error: ' . $e->getMessage());
+            throw $e;
+        }
     }
 }

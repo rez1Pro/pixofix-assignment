@@ -4,6 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\FileItem;
 use App\Models\Order;
+use App\Services\FileBatchService;
+use App\Services\FileItemService;
+use App\Services\FileNamingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Storage;
@@ -11,6 +14,20 @@ use Inertia\Inertia;
 
 class FileController extends Controller
 {
+    protected FileItemService $fileItemService;
+    protected FileBatchService $fileBatchService;
+    protected FileNamingService $fileNamingService;
+
+    public function __construct(
+        FileItemService $fileItemService,
+        FileBatchService $fileBatchService,
+        FileNamingService $fileNamingService
+    ) {
+        $this->fileItemService = $fileItemService;
+        $this->fileBatchService = $fileBatchService;
+        $this->fileNamingService = $fileNamingService;
+    }
+
     /**
      * Display a listing of the resource.
      */
@@ -54,38 +71,7 @@ class FileController extends Controller
 
         // Process the uploaded files
         if ($request->hasFile('files')) {
-            foreach ($request->file('files') as $file) {
-                $originalFilename = $file->getClientOriginalName();
-                $extension = $file->getClientOriginalExtension();
-                $fileSize = $file->getSize();
-                $filename = pathinfo($originalFilename, PATHINFO_FILENAME) . '_' . time() . '.' . $extension;
-
-                // Use the provided directory path or extract from the filename
-                $directoryPath = $request->directory_path;
-                if (!$directoryPath && strpos($originalFilename, '/') !== false) {
-                    $parts = explode('/', $originalFilename);
-                    $filename = array_pop($parts);
-                    $directoryPath = implode('/', $parts);
-                }
-
-                // Store file in the storage
-                $filepath = $file->storeAs(
-                    "orders/{$order->id}" . ($directoryPath ? "/{$directoryPath}" : ""),
-                    $filename
-                );
-
-                // Create file record
-                FileItem::create([
-                    'order_id' => $order->id,
-                    'filename' => $filename,
-                    'original_filename' => $originalFilename,
-                    'filepath' => $filepath,
-                    'directory_path' => $directoryPath,
-                    'file_type' => $extension,
-                    'file_size' => $fileSize,
-                    'status' => 'pending',
-                ]);
-            }
+            $this->fileItemService->processFiles($order, $request->file('files'));
         }
 
         return redirect()->route('orders.show', $order->id)
@@ -139,14 +125,8 @@ class FileController extends Controller
      */
     public function destroy(FileItem $file)
     {
-        // Delete the physical file
-        if (Storage::exists($file->filepath)) {
-            Storage::delete($file->filepath);
-        }
-
-        // Delete the file record
         $orderId = $file->order_id;
-        $file->delete();
+        $this->fileItemService->deleteFile($file);
 
         return redirect()->route('orders.show', $orderId)
             ->with('success', 'File deleted successfully.');
@@ -161,10 +141,10 @@ class FileController extends Controller
             abort(404, 'File not found');
         }
 
-        $file = Storage::get($file->filepath);
+        $fileContent = Storage::get($file->filepath);
         $mimeType = Storage::mimeType($file->filepath);
 
-        return Response::make($file, 200, [
+        return Response::make($fileContent, 200, [
             'Content-Type' => $mimeType,
             'Content-Disposition' => 'inline; filename="' . $file->original_filename . '"',
         ]);
@@ -179,28 +159,9 @@ class FileController extends Controller
             'processed_file' => 'required|file|mimes:jpeg,png,jpg,gif,svg|max:10240',
         ]);
 
-        // Replace the existing file with the processed one
+        // Process the edited file
         if ($request->hasFile('processed_file')) {
-            $processedFile = $request->file('processed_file');
-
-            // Delete the existing file
-            if (Storage::exists($file->filepath)) {
-                Storage::delete($file->filepath);
-            }
-
-            // Store the new processed file
-            $filepath = $processedFile->storeAs(
-                dirname($file->filepath),
-                $file->filename
-            );
-
-            // Update the file record
-            $file->update([
-                'filepath' => $filepath,
-                'is_processed' => true,
-                'status' => 'completed',
-                'file_size' => $processedFile->getSize(),
-            ]);
+            $this->fileItemService->processEditedFile($file, $request->file('processed_file'));
         }
 
         return redirect()->back()
@@ -242,12 +203,12 @@ class FileController extends Controller
         foreach ($files as $file) {
             if (Storage::exists($file->filepath)) {
                 // Use original filename instead of just the basename
-                // Add directory prefix if available to avoid filename collisions
+                // Add directory prefix to maintain original structure
                 $fileNameInZip = $file->original_filename;
 
-                // If files have the same name but are in different directories, prefix with directory path
+                // If the file has a directory path, create that structure in the zip
                 if ($file->directory_path) {
-                    $fileNameInZip = str_replace('/', '_', $file->directory_path) . '_' . $fileNameInZip;
+                    $fileNameInZip = $file->directory_path . '/' . $fileNameInZip;
                 }
 
                 $zip->addFile(storage_path("app/{$file->filepath}"), $fileNameInZip);
@@ -257,5 +218,48 @@ class FileController extends Controller
         $zip->close();
 
         return response()->download($zipPath, $zipName)->deleteFileAfterSend(true);
+    }
+
+    /**
+     * Claim a batch of files for processing
+     */
+    public function claimBatch(Request $request, Order $order)
+    {
+        $request->validate([
+            'batch_size' => 'required|integer|min:1|max:50',
+            'directory' => 'nullable|string',
+        ]);
+
+        $batchSize = $request->input('batch_size', 10);
+        $directory = $request->input('directory');
+
+        $fileClaim = $this->fileBatchService->claimBatch($order, auth()->user(), $batchSize, $directory);
+
+        if (!$fileClaim) {
+            return redirect()->back()->with('error', 'No files available to claim');
+        }
+
+        return redirect()->route('fileclaims.show', $fileClaim->id)
+            ->with('success', 'Successfully claimed a batch of ' . count($fileClaim->file_ids) . ' files');
+    }
+
+    /**
+     * Mark a file as completed
+     */
+    public function markAsCompleted(FileItem $file)
+    {
+        $this->fileItemService->markAsCompleted($file);
+
+        return redirect()->back()->with('success', 'File marked as completed');
+    }
+
+    /**
+     * Get files grouped by directory
+     */
+    public function getDirectoryStructure(Order $order)
+    {
+        $groupedFiles = $this->fileItemService->getFileItemsGroupedByDirectory($order);
+
+        return response()->json($groupedFiles);
     }
 }

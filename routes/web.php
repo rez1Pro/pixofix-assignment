@@ -46,6 +46,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('orders/{order}/files/download-selected', [FileController::class, 'downloadSelected'])->name('files.download-selected');
     Route::get('files/{file}/preview', [FileController::class, 'preview'])->name('files.preview');
     Route::post('files/{file}/upload-processed', [FileController::class, 'uploadProcessed'])->name('files.upload-processed');
+    Route::post('files/{file}/mark-completed', [FileController::class, 'markAsCompleted'])->name('files.mark-completed');
+    Route::get('orders/{order}/directory-structure', [FileController::class, 'getDirectoryStructure'])->name('files.directory-structure');
+
+    // Batch claim routes
+    Route::post('orders/{order}/claim-batch', [FileController::class, 'claimBatch'])->name('files.claim-batch');
 
     // File Claims Routes
     Route::get('claims', [FileClaimController::class, 'index'])->name('claims.index');
@@ -54,6 +59,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('claims/{claim}/mark-completed', [FileClaimController::class, 'markCompleted'])->name('claims.mark-completed');
     Route::post('claims/{claim}/return-files', [FileClaimController::class, 'returnFiles'])->name('claims.return-files');
     Route::get('orders/{order}/claims', [FileClaimController::class, 'orderClaims'])->name('orders.claims');
+
+    // Batch operations for file claims
+    Route::resource('fileclaims', FileClaimController::class)->only(['show', 'update', 'destroy']);
+    Route::post('fileclaims/{fileclaim}/complete', [FileClaimController::class, 'complete'])->name('fileclaims.complete');
+    Route::post('fileclaims/{fileclaim}/release', [FileClaimController::class, 'release'])->name('fileclaims.release');
 
     Route::group(['prefix' => 'users', 'as' => 'users.'], function () {
         Route::resource('/', UserController::class)->parameter('', 'user')->whereNumber('user');
