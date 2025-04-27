@@ -314,4 +314,114 @@ class OrderService implements OrderServiceInterface
 
         return $formattedFolders;
     }
+
+    /**
+     * Prepare order data for display in the frontend
+     * Including all necessary relationships and formatting
+     */
+    public function prepareOrderForDisplay(int $orderId): array
+    {
+        $order = $this->getOrderById($orderId);
+        $stats = $order->getStats();
+        $fileClaims = $order->fileClaims()->with('user')->get();
+
+        return [
+            'id' => $order->id,
+            'name' => $order->name,
+            'status' => $order->status,
+            'order_number' => $order->order_number,
+            'customer_name' => $order->customer_name,
+            'description' => $order->description,
+            'deadline' => $order->deadline ? $order->deadline->toDateString() : null,
+            'is_approved' => $order->isApproved(),
+            'is_completed' => $order->isCompleted(),
+            'created_at' => $order->created_at->toDateTimeString(),
+            'created_by' => [
+                'id' => $order->creator->id,
+                'name' => $order->creator->name,
+                'avatar' => $order->creator->profile_photo_url ?? null,
+            ],
+            'completed_at' => $order->completed_at ? $order->completed_at->toDateTimeString() : null,
+            'approved_at' => $order->approved_at ? $order->approved_at->toDateTimeString() : null,
+            'folders' => $order->folders->map(function ($folder) {
+                return [
+                    'id' => $folder->id,
+                    'name' => $folder->name,
+                    'isOpen' => $folder->is_open,
+                    'files' => $folder->files->map(function ($file) {
+                        return [
+                            'id' => $file->id,
+                            'name' => $file->name,
+                            'path' => $file->path,
+                            'status' => $file->status,
+                            'created_at' => $file->created_at->toDateString(),
+                            'assignedTo' => $file->assignedTo ? [
+                                'id' => $file->assignedTo->id,
+                                'name' => $file->assignedTo->name,
+                                'avatar' => $file->assignedTo->profile_photo_url ?? null,
+                            ] : null,
+                        ];
+                    })->values()->toArray(),
+                    'subfolders' => $folder->subfolders->map(function ($subfolder) {
+                        return [
+                            'id' => $subfolder->id,
+                            'name' => $subfolder->name,
+                            'isOpen' => $subfolder->is_open,
+                            'files' => $subfolder->files->map(function ($file) {
+                                return [
+                                    'id' => $file->id,
+                                    'name' => $file->name,
+                                    'path' => $file->path,
+                                    'status' => $file->status,
+                                    'created_at' => $file->created_at->toDateString(),
+                                    'assignedTo' => $file->assignedTo ? [
+                                        'id' => $file->assignedTo->id,
+                                        'name' => $file->assignedTo->name,
+                                        'avatar' => $file->assignedTo->profile_photo_url ?? null,
+                                    ] : null,
+                                ];
+                            })->values()->toArray(),
+                        ];
+                    })->values()->toArray(),
+                ];
+            })->values()->toArray(),
+            'stats' => $stats,
+            'fileClaims' => $fileClaims->map(function ($claim) {
+                return [
+                    'id' => $claim->id,
+                    'status' => $claim->status,
+                    'user' => [
+                        'id' => $claim->user->id,
+                        'name' => $claim->user->name,
+                        'avatar' => $claim->user->profile_photo_url ?? null,
+                    ],
+                    'files_count' => $claim->files()->count(),
+                    'created_at' => $claim->created_at->toDateTimeString(),
+                ];
+            })->values()->toArray(),
+        ];
+    }
+
+    /**
+     * Get user permissions for a given order
+     */
+    public function getUserPermissionsForOrder(array|Order $order): array
+    {
+        if (is_array($order)) {
+            $orderId = $order['id'];
+            $orderModel = $this->getOrderById($orderId);
+        } else {
+            $orderModel = $order;
+        }
+
+        $user = auth()->user();
+
+        return [
+            'canEditOrder' => $user->can('update', $orderModel),
+            'canDeleteOrder' => $user->can('delete', $orderModel),
+            'canApproveOrder' => $user->can('approve', $orderModel),
+            'canCompleteOrder' => $user->can('complete', $orderModel),
+            'canUploadFiles' => $user->can('uploadFiles', $orderModel),
+        ];
+    }
 }

@@ -82,4 +82,15 @@ interface OrderServiceInterface
      * Get the order's folder structure with files
      */
     public function getOrderFolderStructure(Order $order): array;
+
+    /**
+     * Prepare order data for display in the frontend
+     * Including all necessary relationships and formatting
+     */
+    public function prepareOrderForDisplay(int $orderId): array;
+
+    /**
+     * Get user permissions for a given order
+     */
+    public function getUserPermissionsForOrder(array|Order $order): array;
 }

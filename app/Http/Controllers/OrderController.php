@@ -24,11 +24,12 @@ class OrderController extends Controller
         $this->fileItemService = $fileItemService;
     }
 
+    /**
+     * Display the dashboard view.
+     */
     public function dashboard()
     {
-        return Inertia::render('OrderManagement', [
-            //
-        ]);
+        return Inertia::render('OrderManagement');
     }
 
     /**
@@ -36,12 +37,10 @@ class OrderController extends Controller
      */
     public function index(Request $request)
     {
-        // Get query parameters for sorting and filtering
         $perPage = $request->get('per_page', 10);
         $status = $request->get('status');
         $search = $request->get('search');
 
-        // Get orders with pagination through the service
         $orders = $this->orderService->getAllOrders($perPage, $search, $status);
 
         return Inertia::render('Orders/Index', [
@@ -62,7 +61,7 @@ class OrderController extends Controller
      */
     public function store(Request $request)
     {
-        $request->validate([
+        $validated = $request->validate([
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'customer_name' => 'nullable|string|max:255',
@@ -70,13 +69,11 @@ class OrderController extends Controller
             'files.*' => 'required|file|mimes:jpeg,png,jpg,gif,svg|max:10240',
         ]);
 
-        $order = $this->orderService->createOrder([
-            'name' => $request->name,
-            'description' => $request->description,
-            'customer_name' => $request->customer_name,
-            'deadline' => $request->deadline,
+        $orderData = array_merge($validated, [
             'files' => $request->file('files'),
         ]);
+
+        $order = $this->orderService->createOrder($orderData);
 
         return redirect()->route('orders.show', $order->id)
             ->with('success', 'Order created successfully.');
@@ -87,66 +84,15 @@ class OrderController extends Controller
      */
     public function show(Order $order)
     {
-        // Get the order with its folder structure
-        $order = $this->orderService->getOrderById($order->id);
-
-        // Format the folder structure for the frontend
-        $formattedFolders = $this->orderService->getOrderFolderStructure($order);
+        $orderModel = $this->orderService->getOrderById($order->id);
+        $orderData = $this->orderService->prepareOrderForDisplay($order->id);
+        $formattedFolders = $this->orderService->getOrderFolderStructure($orderModel);
+        $userPermissions = $this->orderService->getUserPermissionsForOrder($orderData);
 
         return Inertia::render('Orders/Show', [
-            'order' => [
-                'id' => $order->id,
-                'name' => $order->name,
-                'status' => $order->status,
-                'order_number' => $order->order_number,
-                'customer_name' => $order->customer_name,
-                'deadline' => $order->deadline ? $order->deadline->toDateString() : null,
-                'is_approved' => $order->isApproved(),
-                'folders' => $order->folders->map(function ($folder) {
-                    return [
-                        'id' => $folder->id,
-                        'name' => $folder->name,
-                        'isOpen' => $folder->is_open,
-                        'files' => $folder->files->map(function ($file) {
-                            return [
-                                'id' => $file->id,
-                                'name' => $file->name,
-                                'path' => $file->path,
-                                'status' => $file->status,
-                                'created_at' => $file->created_at->toDateString(),
-                                'assignedTo' => $file->assignedTo ? [
-                                    'id' => $file->assignedTo->id,
-                                    'name' => $file->assignedTo->name,
-                                    'avatar' => $file->assignedTo->profile_photo_url ?? null,
-                                ] : null,
-                            ];
-                        })->values()->toArray(),
-                        'subfolders' => $folder->subfolders->map(function ($subfolder) {
-                            return [
-                                'id' => $subfolder->id,
-                                'name' => $subfolder->name,
-                                'isOpen' => $subfolder->is_open,
-                                'files' => $subfolder->files->map(function ($file) {
-                                    return [
-                                        'id' => $file->id,
-                                        'name' => $file->name,
-                                        'path' => $file->path,
-                                        'status' => $file->status,
-                                        'created_at' => $file->created_at->toDateString(),
-                                        'assignedTo' => $file->assignedTo ? [
-                                            'id' => $file->assignedTo->id,
-                                            'name' => $file->assignedTo->name,
-                                            'avatar' => $file->assignedTo->profile_photo_url ?? null,
-                                        ] : null,
-                                    ];
-                                })->values()->toArray(),
-                            ];
-                        })->values()->toArray(),
-                    ];
-                })->values()->toArray(),
-                'stats' => $order->getStats(),
-            ],
+            'order' => $orderData,
             'fileStructure' => $formattedFolders,
+            'userPermissions' => $userPermissions,
         ]);
     }
 
@@ -168,19 +114,14 @@ class OrderController extends Controller
      */
     public function update(Request $request, Order $order)
     {
-        $request->validate([
+        $validated = $request->validate([
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'customer_name' => 'nullable|string|max:255',
             'deadline' => 'nullable|date',
         ]);
 
-        $this->orderService->updateOrder($order, [
-            'name' => $request->name,
-            'description' => $request->description,
-            'customer_name' => $request->customer_name,
-            'deadline' => $request->deadline,
-        ]);
+        $this->orderService->updateOrder($order, $validated);
 
         return redirect()->route('orders.show', $order->id)
             ->with('success', 'Order updated successfully.');
@@ -202,7 +143,7 @@ class OrderController extends Controller
      */
     public function markAsCompleted(Order $order): RedirectResponse
     {
-        $order->markAsCompleted();
+        $this->orderService->markOrderAsCompleted($order);
 
         return redirect()->back()->with('success', 'Order marked as completed.');
     }
@@ -212,7 +153,7 @@ class OrderController extends Controller
      */
     public function approve(Order $order): RedirectResponse
     {
-        $order->approve();
+        $this->orderService->approveOrder($order);
 
         return redirect()->back()->with('success', 'Order approved successfully.');
     }
@@ -223,7 +164,7 @@ class OrderController extends Controller
     public function refreshStats(Order $order)
     {
         return response()->json([
-            'stats' => $order->getStats(),
+            'stats' => $this->orderService->getOrderStats($order),
         ]);
     }
 }

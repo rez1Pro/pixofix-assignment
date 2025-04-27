@@ -685,7 +685,7 @@ const deleteOrder = () => {
                 <div class="flex items-center mb-2">
                     <span class="text-sm text-gray-500 dark:text-gray-400 mr-2">Customer:</span>
                     <span class="text-sm font-medium text-gray-900 dark:text-white">{{ order.customer_name || 'N/A'
-                    }}</span>
+                        }}</span>
                 </div>
                 <div class="flex items-center">
                     <span class="text-sm text-gray-500 dark:text-gray-400 mr-2">Deadline:</span>
