@@ -106,27 +106,36 @@ class FileItem extends Model
     public function assignTo(User $user): self
     {
         $this->update([
-            'status' => 'in_progress',
+            'status' => 'processing',
             'assigned_to' => $user->id,
         ]);
         return $this;
     }
 
     /**
-     * Mark the file as approved
+     * Mark the file as claimed
      */
-    public function markAsApproved(): self
+    public function markAsClaimed(): self
     {
-        $this->update(['status' => 'approved']);
+        $this->update(['status' => 'claimed']);
         return $this;
     }
 
     /**
-     * Mark the file as rejected
+     * Mark the file as processing
      */
-    public function markAsRejected(): self
+    public function markAsProcessing(): self
     {
-        $this->update(['status' => 'rejected']);
+        $this->update(['status' => 'processing']);
+        return $this;
+    }
+
+    /**
+     * Mark the file as completed
+     */
+    public function markAsCompleted(): self
+    {
+        $this->update(['status' => 'completed']);
         return $this;
     }
 

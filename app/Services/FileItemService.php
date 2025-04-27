@@ -401,12 +401,12 @@ class FileItemService implements FileItemServiceInterface
         switch ($status) {
             case 'pending':
                 return $file->markAsPending();
-            case 'in_progress':
+            case 'claimed':
+                return $file->markAsClaimed();
+            case 'processing':
                 return $file->markAsProcessing();
-            case 'approved':
-                return $file->markAsApproved();
-            case 'rejected':
-                return $file->markAsRejected();
+            case 'completed':
+                return $file->markAsCompleted();
             default:
                 throw new \InvalidArgumentException("Invalid status: {$status}");
         }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Interfaces\FileItemServiceInterface;
 use App\Interfaces\OrderServiceInterface;
 use App\Models\FileItem;
 use App\Models\Order;
@@ -11,15 +12,20 @@ use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Response;
 
 class OrderFilesController extends Controller
 {
     protected OrderServiceInterface $orderService;
+    protected FileItemServiceInterface $fileItemService;
 
-    public function __construct(OrderServiceInterface $orderService)
-    {
+    public function __construct(
+        OrderServiceInterface $orderService,
+        FileItemServiceInterface $fileItemService
+    ) {
         $this->orderService = $orderService;
+        $this->fileItemService = $fileItemService;
     }
 
     /**
@@ -30,37 +36,37 @@ class OrderFilesController extends Controller
         $request->validate([
             'file_ids' => 'required|array',
             'file_ids.*' => 'required|exists:file_items,id',
-            'status' => 'required|in:pending,in_progress,approved,rejected',
+            'status' => 'required|in:pending,claimed,processing,completed',
         ]);
 
         $fileIds = $request->input('file_ids');
         $newStatus = $request->input('status');
+        $user = Auth::user();
         $updatedCount = 0;
 
         foreach ($fileIds as $fileId) {
-            $file = FileItem::findOrFail($fileId);
+            try {
+                $file = $this->fileItemService->getFileItemById($fileId);
 
-            // Make sure the file belongs to this order
-            if ($file->order_id !== $order->id) {
-                continue;
+                // Make sure the file belongs to this order
+                if ($file->order_id !== $order->id) {
+                    continue;
+                }
+
+                // If status is processing or claimed, assign to the current user
+                if ($newStatus === 'processing' || $newStatus === 'claimed') {
+                    $this->fileItemService->assignFileToUser($file, $user);
+                }
+
+                $this->fileItemService->updateFileStatus($file, $newStatus);
+                $updatedCount++;
+            } catch (\Exception $e) {
+                Log::error('Error updating file status', [
+                    'file_id' => $fileId,
+                    'status' => $newStatus,
+                    'error' => $e->getMessage()
+                ]);
             }
-
-            switch ($newStatus) {
-                case 'pending':
-                    $file->markAsPending();
-                    break;
-                case 'in_progress':
-                    $file->assignTo(Auth::user());
-                    break;
-                case 'approved':
-                    $file->markAsApproved();
-                    break;
-                case 'rejected':
-                    $file->markAsRejected();
-                    break;
-            }
-
-            $updatedCount++;
         }
 
         return redirect()->back()->with('success', "{$updatedCount} files updated to status '{$newStatus}'.");
@@ -80,23 +86,14 @@ class OrderFilesController extends Controller
         $fileIds = $request->input('file_ids');
         $userId = $request->input('user_id');
         $user = User::findOrFail($userId);
-        $assignedCount = 0;
 
-        foreach ($fileIds as $fileId) {
-            $file = FileItem::findOrFail($fileId);
+        // Filter file IDs to only include those belonging to this order
+        $validFileIds = FileItem::whereIn('id', $fileIds)
+            ->where('order_id', $order->id)
+            ->pluck('id')
+            ->toArray();
 
-            // Make sure the file belongs to this order
-            if ($file->order_id !== $order->id) {
-                continue;
-            }
-
-            $file->update([
-                'status' => 'in_progress',
-                'assigned_to' => $userId,
-            ]);
-
-            $assignedCount++;
-        }
+        $assignedCount = $this->fileItemService->assignMultipleFilesToUser($validFileIds, $user);
 
         return redirect()->back()->with('success', "{$assignedCount} files assigned to {$user->name}.");
     }
@@ -113,19 +110,14 @@ class OrderFilesController extends Controller
 
         $fileIds = $request->input('file_ids');
         $user = Auth::user();
-        $assignedCount = 0;
 
-        foreach ($fileIds as $fileId) {
-            $file = FileItem::findOrFail($fileId);
+        // Filter file IDs to only include those belonging to this order
+        $validFileIds = FileItem::whereIn('id', $fileIds)
+            ->where('order_id', $order->id)
+            ->pluck('id')
+            ->toArray();
 
-            // Make sure the file belongs to this order
-            if ($file->order_id !== $order->id) {
-                continue;
-            }
-
-            $file->assignTo($user);
-            $assignedCount++;
-        }
+        $assignedCount = $this->fileItemService->assignMultipleFilesToUser($validFileIds, $user);
 
         return redirect()->back()->with('success', "{$assignedCount} files assigned to you.");
     }
@@ -141,81 +133,27 @@ class OrderFilesController extends Controller
         ]);
 
         $fileIds = $request->input('file_ids');
-        $files = FileItem::whereIn('id', $fileIds)
-            ->where('order_id', $order->id)
-            ->get();
 
-        if ($files->isEmpty()) {
+        // Filter file IDs to only include those belonging to this order
+        $validFileIds = FileItem::whereIn('id', $fileIds)
+            ->where('order_id', $order->id)
+            ->pluck('id')
+            ->toArray();
+
+        if (empty($validFileIds)) {
             return redirect()->back()->with('error', 'No files selected for download');
         }
 
         try {
-            $zipName = "order_{$order->id}_files_" . date('Y-m-d_H-i-s') . ".zip";
-            $zipPath = storage_path("app/temp/{$zipName}");
-
-            // Ensure the temp directory exists with proper permissions
-            $tempDir = storage_path('app/temp');
-            if (!file_exists($tempDir)) {
-                if (!mkdir($tempDir, 0755, true)) {
-                    \Log::error("Failed to create temp directory at {$tempDir}");
-                    return redirect()->back()->with('error', 'Could not create temp directory for download');
-                }
-            }
-
-            // Create new zip archive
-            $zip = new \ZipArchive();
-            if ($zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
-                \Log::error("Failed to create zip file at {$zipPath}");
-                return redirect()->back()->with('error', 'Could not create zip file');
-            }
-
-            $fileCount = 0;
-            // Add files to the zip
-            foreach ($files as $file) {
-                $filePath = storage_path("app/{$file->path}");
-                if (file_exists($filePath)) {
-                    $fileNameInZip = $file->name;
-
-                    // If the file is in a folder, add folder structure to zip
-                    if ($file->folder) {
-                        $folderName = $file->folder->name;
-                        $fileNameInZip = $folderName . '/' . $fileNameInZip;
-
-                        // If the file is in a subfolder, add that to the path
-                        if ($file->subfolder) {
-                            $fileNameInZip = $folderName . '/' . $file->subfolder->name . '/' . $file->name;
-                        }
-                    }
-
-                    $zip->addFile($filePath, $fileNameInZip);
-                    $fileCount++;
-                } else {
-                    \Log::warning("File not found at {$filePath} when creating download zip");
-                }
-            }
-
-            $zip->close();
-
-            // Verify the zip was created successfully
-            if (!file_exists($zipPath)) {
-                \Log::error("Zip file not created at {$zipPath} after zip->close()");
-                return redirect()->back()->with('error', 'Failed to create download file');
-            }
-
-            if ($fileCount === 0) {
-                // No files were added to the zip
-                if (file_exists($zipPath)) {
-                    unlink($zipPath);
-                }
-                return redirect()->back()->with('error', 'No files available for download');
-            }
+            $zipPath = $this->fileItemService->createZipArchiveFromFiles($order, $validFileIds);
+            $zipName = basename($zipPath);
 
             return Response::download($zipPath, $zipName)->deleteFileAfterSend(true);
         } catch (\Exception $e) {
-            \Log::error('Error creating download zip: ' . $e->getMessage(), [
+            Log::error('Error creating download zip', [
                 'order_id' => $order->id,
-                'file_ids' => $fileIds,
-                'exception' => $e
+                'file_ids' => $validFileIds,
+                'error' => $e->getMessage()
             ]);
 
             return redirect()->back()->with('error', 'Failed to create download: ' . $e->getMessage());
