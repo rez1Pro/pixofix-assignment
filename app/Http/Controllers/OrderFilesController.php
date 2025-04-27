@@ -149,43 +149,76 @@ class OrderFilesController extends Controller
             return redirect()->back()->with('error', 'No files selected for download');
         }
 
-        $zipName = "order_{$order->id}_files_" . date('Y-m-d_H-i-s') . ".zip";
-        $zipPath = storage_path("app/temp/{$zipName}");
+        try {
+            $zipName = "order_{$order->id}_files_" . date('Y-m-d_H-i-s') . ".zip";
+            $zipPath = storage_path("app/temp/{$zipName}");
 
-        // Ensure the temp directory exists
-        if (!file_exists(storage_path('app/temp'))) {
-            mkdir(storage_path('app/temp'), 0755, true);
-        }
-
-        // Create new zip archive
-        $zip = new \ZipArchive();
-        if ($zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
-            return redirect()->back()->with('error', 'Could not create zip file');
-        }
-
-        // Add files to the zip
-        foreach ($files as $file) {
-            $filePath = storage_path("app/{$file->path}");
-            if (file_exists($filePath)) {
-                $fileNameInZip = $file->name;
-
-                // If the file is in a folder, add folder structure to zip
-                if ($file->folder) {
-                    $folderName = $file->folder->name;
-                    $fileNameInZip = $folderName . '/' . $fileNameInZip;
-
-                    // If the file is in a subfolder, add that to the path
-                    if ($file->subfolder) {
-                        $fileNameInZip = $folderName . '/' . $file->subfolder->name . '/' . $file->name;
-                    }
+            // Ensure the temp directory exists with proper permissions
+            $tempDir = storage_path('app/temp');
+            if (!file_exists($tempDir)) {
+                if (!mkdir($tempDir, 0755, true)) {
+                    \Log::error("Failed to create temp directory at {$tempDir}");
+                    return redirect()->back()->with('error', 'Could not create temp directory for download');
                 }
-
-                $zip->addFile($filePath, $fileNameInZip);
             }
+
+            // Create new zip archive
+            $zip = new \ZipArchive();
+            if ($zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
+                \Log::error("Failed to create zip file at {$zipPath}");
+                return redirect()->back()->with('error', 'Could not create zip file');
+            }
+
+            $fileCount = 0;
+            // Add files to the zip
+            foreach ($files as $file) {
+                $filePath = storage_path("app/{$file->path}");
+                if (file_exists($filePath)) {
+                    $fileNameInZip = $file->name;
+
+                    // If the file is in a folder, add folder structure to zip
+                    if ($file->folder) {
+                        $folderName = $file->folder->name;
+                        $fileNameInZip = $folderName . '/' . $fileNameInZip;
+
+                        // If the file is in a subfolder, add that to the path
+                        if ($file->subfolder) {
+                            $fileNameInZip = $folderName . '/' . $file->subfolder->name . '/' . $file->name;
+                        }
+                    }
+
+                    $zip->addFile($filePath, $fileNameInZip);
+                    $fileCount++;
+                } else {
+                    \Log::warning("File not found at {$filePath} when creating download zip");
+                }
+            }
+
+            $zip->close();
+
+            // Verify the zip was created successfully
+            if (!file_exists($zipPath)) {
+                \Log::error("Zip file not created at {$zipPath} after zip->close()");
+                return redirect()->back()->with('error', 'Failed to create download file');
+            }
+
+            if ($fileCount === 0) {
+                // No files were added to the zip
+                if (file_exists($zipPath)) {
+                    unlink($zipPath);
+                }
+                return redirect()->back()->with('error', 'No files available for download');
+            }
+
+            return Response::download($zipPath, $zipName)->deleteFileAfterSend(true);
+        } catch (\Exception $e) {
+            \Log::error('Error creating download zip: ' . $e->getMessage(), [
+                'order_id' => $order->id,
+                'file_ids' => $fileIds,
+                'exception' => $e
+            ]);
+
+            return redirect()->back()->with('error', 'Failed to create download: ' . $e->getMessage());
         }
-
-        $zip->close();
-
-        return Response::download($zipPath, $zipName)->deleteFileAfterSend(true);
     }
 }

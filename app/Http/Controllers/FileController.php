@@ -2,41 +2,33 @@
 
 namespace App\Http\Controllers;
 
+use App\Interfaces\FileItemServiceInterface;
 use App\Models\FileItem;
 use App\Models\Folder;
 use App\Models\Order;
 use App\Models\Subfolder;
-use App\Models\User;
 use App\Services\FileBatchService;
-use App\Services\FileItemService;
-use App\Services\FileNamingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Inertia\Inertia;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Storage;
-use Inertia\Inertia;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
-use App\Services\OrderService;
+use Illuminate\Http\RedirectResponse;
 
 class FileController extends Controller
 {
-    protected FileItemService $fileItemService;
+    protected FileItemServiceInterface $fileItemService;
     protected FileBatchService $fileBatchService;
-    protected FileNamingService $fileNamingService;
-    protected OrderService $orderService;
 
     public function __construct(
-        FileItemService $fileItemService,
-        FileBatchService $fileBatchService,
-        FileNamingService $fileNamingService,
-        OrderService $orderService
+        FileItemServiceInterface $fileItemService,
+        FileBatchService $fileBatchService
     ) {
         $this->fileItemService = $fileItemService;
         $this->fileBatchService = $fileBatchService;
-        $this->fileNamingService = $fileNamingService;
-        $this->orderService = $orderService;
     }
 
     /**
@@ -73,7 +65,7 @@ class FileController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request, Order $order)
+    public function store(Request $request, Order $order): RedirectResponse
     {
         $request->validate([
             'files.*' => 'required|file|mimes:jpeg,png,jpg,gif,svg|max:10240',
@@ -105,26 +97,21 @@ class FileController extends Controller
      */
     public function download(FileItem $file): BinaryFileResponse
     {
-        $path = storage_path('app/' . $file->path);
-
-        if (!file_exists($path)) {
-            abort(404, 'File not found');
-        }
-
-        return response()->download($path, $file->name);
+        return $this->fileItemService->downloadFile($file);
     }
 
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, FileItem $file)
+    public function update(Request $request, FileItem $file): RedirectResponse
     {
         $request->validate([
-            'status' => 'sometimes|required|in:pending,claimed,processing,completed',
-            'is_processed' => 'sometimes|required|boolean',
+            'status' => 'sometimes|required|in:pending,in_progress,approved,rejected',
         ]);
 
-        $file->update($request->only(['status', 'is_processed']));
+        if ($request->has('status')) {
+            $this->fileItemService->updateFileStatus($file, $request->status);
+        }
 
         return redirect()->back()
             ->with('success', 'File updated successfully.');
@@ -135,13 +122,7 @@ class FileController extends Controller
      */
     public function destroy(FileItem $file): RedirectResponse
     {
-        // Delete the file from storage
-        if (Storage::exists($file->path)) {
-            Storage::delete($file->path);
-        }
-
-        // Delete the record
-        $file->delete();
+        $this->fileItemService->deleteFile($file);
 
         return redirect()->back()->with('success', 'File deleted successfully.');
     }
@@ -151,23 +132,23 @@ class FileController extends Controller
      */
     public function preview(FileItem $file)
     {
-        if (!Storage::exists($file->filepath)) {
+        if (!file_exists(storage_path('app/' . $file->filepath))) {
             abort(404, 'File not found');
         }
 
-        $fileContent = Storage::get($file->filepath);
-        $mimeType = Storage::mimeType($file->filepath);
+        $fileContent = file_get_contents(storage_path('app/' . $file->filepath));
+        $mimeType = mime_content_type(storage_path('app/' . $file->filepath));
 
-        return Response::make($fileContent, 200, [
+        return response($fileContent, 200, [
             'Content-Type' => $mimeType,
-            'Content-Disposition' => 'inline; filename="' . $file->original_filename . '"',
+            'Content-Disposition' => 'inline; filename="' . ($file->original_filename ?? $file->filename) . '"',
         ]);
     }
 
     /**
      * Upload a processed file replacement
      */
-    public function uploadProcessed(Request $request, FileItem $file)
+    public function uploadProcessed(Request $request, FileItem $file): RedirectResponse
     {
         $request->validate([
             'processed_file' => 'required|file|mimes:jpeg,png,jpg,gif,svg|max:10240',
@@ -188,48 +169,13 @@ class FileController extends Controller
     public function downloadSelected(Request $request, Order $order)
     {
         $request->validate([
-            'fileIds' => 'required|array',
-            'fileIds.*' => 'required|integer|exists:file_items,id'
+            'file_ids' => 'required|array',
+            'file_ids.*' => 'required|integer|exists:file_items,id'
         ]);
 
-        $fileIds = $request->input('fileIds');
-        $files = FileItem::whereIn('id', $fileIds)->where('order_id', $order->id)->get();
-
-        if ($files->isEmpty()) {
-            return redirect()->back()->with('error', 'No files selected for download');
-        }
-
-        $zipName = "order_{$order->id}_selected_files.zip";
-        $zipPath = storage_path("app/temp/{$zipName}");
-
-        // Ensure the temp directory exists
-        if (!file_exists(storage_path('app/temp'))) {
-            mkdir(storage_path('app/temp'), 0755, true);
-        }
-
-        // Create new zip archive
-        $zip = new \ZipArchive();
-        if ($zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
-            return redirect()->back()->with('error', 'Could not create zip file');
-        }
-
-        // Add files to the zip
-        foreach ($files as $file) {
-            if (Storage::exists($file->filepath)) {
-                // Use original filename instead of just the basename
-                // Add directory prefix to maintain original structure
-                $fileNameInZip = $file->original_filename;
-
-                // If the file has a directory path, create that structure in the zip
-                if ($file->directory_path) {
-                    $fileNameInZip = $file->directory_path . '/' . $fileNameInZip;
-                }
-
-                $zip->addFile(storage_path("app/{$file->filepath}"), $fileNameInZip);
-            }
-        }
-
-        $zip->close();
+        $fileIds = $request->input('file_ids');
+        $zipPath = $this->fileItemService->createZipArchiveFromFiles($order, $fileIds);
+        $zipName = basename($zipPath);
 
         return response()->download($zipPath, $zipName)->deleteFileAfterSend(true);
     }
@@ -260,7 +206,7 @@ class FileController extends Controller
     /**
      * Mark a file as completed
      */
-    public function markAsCompleted(FileItem $file)
+    public function markAsCompleted(FileItem $file): RedirectResponse
     {
         $this->fileItemService->markAsCompleted($file);
 
@@ -287,7 +233,7 @@ class FileController extends Controller
             'files.*' => 'required|file|max:10240', // 10MB max per file
         ]);
 
-        $uploadedFiles = $this->orderService->uploadFilesToFolder($folder, $request->file('files'));
+        $uploadedFiles = $this->fileItemService->uploadFilesToFolder($folder, $request->file('files'));
 
         return redirect()->back()->with('success', count($uploadedFiles) . ' files uploaded successfully.');
     }
@@ -302,7 +248,7 @@ class FileController extends Controller
             'files.*' => 'required|file|max:10240', // 10MB max per file
         ]);
 
-        $uploadedFiles = $this->orderService->uploadFilesToSubfolder($subfolder, $request->file('files'));
+        $uploadedFiles = $this->fileItemService->uploadFilesToSubfolder($subfolder, $request->file('files'));
 
         return redirect()->back()->with('success', count($uploadedFiles) . ' files uploaded successfully.');
     }
@@ -312,7 +258,7 @@ class FileController extends Controller
      */
     public function assignToSelf(Request $request, FileItem $file): RedirectResponse
     {
-        $file->assignTo(Auth::user());
+        $this->fileItemService->assignFileToUser($file, Auth::user());
 
         return redirect()->back()->with('success', 'File assigned to you successfully.');
     }
@@ -327,14 +273,7 @@ class FileController extends Controller
             'file_ids.*' => 'required|exists:file_items,id',
         ]);
 
-        $user = Auth::user();
-        $count = 0;
-
-        foreach ($request->file_ids as $fileId) {
-            $file = FileItem::findOrFail($fileId);
-            $file->assignTo($user);
-            $count++;
-        }
+        $count = $this->fileItemService->assignMultipleFilesToUser($request->file_ids, Auth::user());
 
         return redirect()->back()->with('success', $count . ' files assigned to you successfully.');
     }
@@ -348,22 +287,7 @@ class FileController extends Controller
             'status' => 'required|in:pending,in_progress,approved,rejected',
         ]);
 
-        $status = $request->status;
-
-        switch ($status) {
-            case 'pending':
-                $file->markAsPending();
-                break;
-            case 'in_progress':
-                $file->assignTo(Auth::user());
-                break;
-            case 'approved':
-                $file->markAsApproved();
-                break;
-            case 'rejected':
-                $file->markAsRejected();
-                break;
-        }
+        $this->fileItemService->updateFileStatus($file, $request->status);
 
         return redirect()->back()->with('success', 'File status updated successfully.');
     }
