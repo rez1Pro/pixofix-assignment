@@ -2,7 +2,9 @@
 
 namespace App\Interfaces;
 
+use App\Models\Folder;
 use App\Models\Order;
+use App\Models\Subfolder;
 use Spatie\LaravelData\PaginatedDataCollection;
 
 interface OrderServiceInterface
@@ -55,4 +57,29 @@ interface OrderServiceInterface
      * Get order statistics
      */
     public function getOrderStats(Order $order): array;
+
+    /**
+     * Create a new folder in the order
+     */
+    public function createFolder(Order $order, string $name): Folder;
+
+    /**
+     * Create a new subfolder in a folder
+     */
+    public function createSubfolder(Folder $folder, string $name): Subfolder;
+
+    /**
+     * Upload files to a folder
+     */
+    public function uploadFilesToFolder(Folder $folder, array $files): array;
+
+    /**
+     * Upload files to a subfolder
+     */
+    public function uploadFilesToSubfolder(Subfolder $subfolder, array $files): array;
+
+    /**
+     * Get the order's folder structure with files
+     */
+    public function getOrderFolderStructure(Order $order): array;
 }

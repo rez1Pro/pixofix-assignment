@@ -6,7 +6,9 @@ use App\Data\OrderData;
 use App\Interfaces\FileItemServiceInterface;
 use App\Interfaces\OrderServiceInterface;
 use App\Models\FileItem;
+use App\Models\Folder;
 use App\Models\Order;
+use App\Models\Subfolder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -34,8 +36,11 @@ class OrderService implements OrderServiceInterface
         $query = Order::with('creator.role')
             ->withCount([
                 'fileItems as total_files_count',
-                'fileItems as completed_files_count' => function ($query) {
-                    $query->where('status', 'completed');
+                'fileItems as approved_files_count' => function ($query) {
+                    $query->where('status', 'approved');
+                },
+                'fileItems as pending_files_count' => function ($query) {
+                    $query->where('status', 'pending');
                 }
             ])
             ->orderBy('created_at', 'desc');
@@ -44,7 +49,8 @@ class OrderService implements OrderServiceInterface
         if ($search) {
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('order_number', 'like', "%{$search}%");
+                    ->orWhere('order_number', 'like', "%{$search}%")
+                    ->orWhere('customer_name', 'like', "%{$search}%");
             });
         }
 
@@ -66,7 +72,11 @@ class OrderService implements OrderServiceInterface
      */
     public function getOrderById(int $id): Order
     {
-        return Order::with(['creator.role', 'fileItems'])->findOrFail($id);
+        return Order::with([
+            'creator.role',
+            'folders.files',
+            'folders.subfolders.files'
+        ])->findOrFail($id);
     }
 
     /**
@@ -75,20 +85,29 @@ class OrderService implements OrderServiceInterface
     public function createOrder(array $data): Order
     {
         // Generate order number
-        $orderNumber = 'ORD-' . strtoupper(Str::random(8));
+        $orderNumber = 'ORD-' . date('Y-m') . '-' . str_pad(Order::count() + 1, 3, '0', STR_PAD_LEFT);
 
         // Create the order
         $order = Order::create([
             'order_number' => $orderNumber,
             'name' => $data['name'],
             'description' => $data['description'] ?? null,
+            'customer_name' => $data['customer_name'] ?? null,
+            'deadline' => $data['deadline'] ?? null,
             'created_by' => Auth::id(),
             'status' => 'pending',
         ]);
 
+        // Create default folders
+        $this->createFolder($order, 'Original Images');
+        $this->createFolder($order, 'Edited Images');
+
         // Process the uploaded files if present
         if (isset($data['files']) && !empty($data['files'])) {
-            $this->processOrderFiles($order, $data['files']);
+            $originalFolder = $order->folders()->where('name', 'Original Images')->first();
+            if ($originalFolder) {
+                $this->uploadFilesToFolder($originalFolder, $data['files']);
+            }
         }
 
         return $order;
@@ -101,7 +120,9 @@ class OrderService implements OrderServiceInterface
     {
         $order->update([
             'name' => $data['name'],
-            'description' => $data['description'] ?? null,
+            'description' => $data['description'] ?? $order->description,
+            'customer_name' => $data['customer_name'] ?? $order->customer_name,
+            'deadline' => $data['deadline'] ?? $order->deadline,
         ]);
 
         return $order;
@@ -124,13 +145,7 @@ class OrderService implements OrderServiceInterface
      */
     public function markOrderAsCompleted(Order $order): Order
     {
-        if ($order->isCompleted()) {
-            $order->update([
-                'status' => 'completed',
-                'completed_at' => now(),
-            ]);
-        }
-
+        $order->markAsCompleted();
         return $order;
     }
 
@@ -139,13 +154,7 @@ class OrderService implements OrderServiceInterface
      */
     public function approveOrder(Order $order): Order
     {
-        if ($order->status === 'completed') {
-            $order->update([
-                'status' => 'approved',
-                'approved_at' => now(),
-            ]);
-        }
-
+        $order->approve();
         return $order;
     }
 
@@ -162,11 +171,147 @@ class OrderService implements OrderServiceInterface
      */
     public function getOrderStats(Order $order): array
     {
-        return [
-            'total' => $order->totalFilesCount(),
-            'pending' => $order->pendingFilesCount(),
-            'claimed' => $order->claimedFilesCount(),
-            'completed' => $order->completedFilesCount(),
-        ];
+        return $order->getStats();
+    }
+
+    /**
+     * Create a new folder in the order
+     */
+    public function createFolder(Order $order, string $name): Folder
+    {
+        return $order->folders()->create([
+            'name' => $name,
+            'is_open' => true,
+        ]);
+    }
+
+    /**
+     * Create a new subfolder in a folder
+     */
+    public function createSubfolder(Folder $folder, string $name): Subfolder
+    {
+        return $folder->subfolders()->create([
+            'name' => $name,
+            'is_open' => true,
+        ]);
+    }
+
+    /**
+     * Upload files to a folder
+     */
+    public function uploadFilesToFolder(Folder $folder, array $files): array
+    {
+        $uploadedFiles = [];
+
+        foreach ($files as $file) {
+            $originalName = $file->getClientOriginalName();
+            $path = $file->storeAs(
+                'orders/' . $folder->order_id . '/' . $folder->id,
+                Str::slug(pathinfo($originalName, PATHINFO_FILENAME)) . '-' . time() . '.' . $file->getClientOriginalExtension()
+            );
+
+            $fileItem = $folder->files()->create([
+                'order_id' => $folder->order_id,
+                'name' => $originalName,
+                'original_name' => $originalName,
+                'path' => $path,
+                'file_type' => $file->getClientMimeType(),
+                'file_size' => $file->getSize(),
+                'status' => 'pending',
+            ]);
+
+            $uploadedFiles[] = $fileItem;
+        }
+
+        return $uploadedFiles;
+    }
+
+    /**
+     * Upload files to a subfolder
+     */
+    public function uploadFilesToSubfolder(Subfolder $subfolder, array $files): array
+    {
+        $uploadedFiles = [];
+        $folder = $subfolder->folder;
+
+        foreach ($files as $file) {
+            $originalName = $file->getClientOriginalName();
+            $path = $file->storeAs(
+                'orders/' . $folder->order_id . '/' . $folder->id . '/' . $subfolder->id,
+                Str::slug(pathinfo($originalName, PATHINFO_FILENAME)) . '-' . time() . '.' . $file->getClientOriginalExtension()
+            );
+
+            $fileItem = $subfolder->files()->create([
+                'order_id' => $folder->order_id,
+                'folder_id' => $folder->id,
+                'name' => $originalName,
+                'original_name' => $originalName,
+                'path' => $path,
+                'file_type' => $file->getClientMimeType(),
+                'file_size' => $file->getSize(),
+                'status' => 'pending',
+            ]);
+
+            $uploadedFiles[] = $fileItem;
+        }
+
+        return $uploadedFiles;
+    }
+
+    /**
+     * Get the order's folder structure with files
+     */
+    public function getOrderFolderStructure(Order $order): array
+    {
+        // Load the order with all folders, subfolders, and files
+        $order->load([
+            'folders.files.assignedTo',
+            'folders.subfolders.files.assignedTo'
+        ]);
+
+        $formattedFolders = [];
+        foreach ($order->folders as $folder) {
+            $formattedSubfolders = [];
+            foreach ($folder->subfolders as $subfolder) {
+                $formattedSubfolders[$subfolder->name] = [
+                    'isOpen' => $subfolder->is_open,
+                    'files' => $subfolder->files->map(function ($file) {
+                        return [
+                            'id' => $file->id,
+                            'name' => $file->name,
+                            'path' => $file->path,
+                            'status' => $file->status,
+                            'created_at' => $file->created_at->toDateString(),
+                            'assignedTo' => $file->assignedTo ? [
+                                'id' => $file->assignedTo->id,
+                                'name' => $file->assignedTo->name,
+                                'avatar' => $file->assignedTo->profile_photo_url ?? null,
+                            ] : null,
+                        ];
+                    })->toArray(),
+                ];
+            }
+
+            $formattedFolders[$folder->name] = [
+                'isOpen' => $folder->is_open,
+                'files' => $folder->files->map(function ($file) {
+                    return [
+                        'id' => $file->id,
+                        'name' => $file->name,
+                        'path' => $file->path,
+                        'status' => $file->status,
+                        'created_at' => $file->created_at->toDateString(),
+                        'assignedTo' => $file->assignedTo ? [
+                            'id' => $file->assignedTo->id,
+                            'name' => $file->assignedTo->name,
+                            'avatar' => $file->assignedTo->profile_photo_url ?? null,
+                        ] : null,
+                    ];
+                })->toArray(),
+                'subfolders' => $formattedSubfolders,
+            ];
+        }
+
+        return $formattedFolders;
     }
 }

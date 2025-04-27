@@ -17,6 +17,8 @@ class Order extends Model
         'description',
         'created_by',
         'status',
+        'deadline',
+        'customer_name',
         'completed_at',
         'approved_at',
     ];
@@ -24,6 +26,7 @@ class Order extends Model
     protected $casts = [
         'completed_at' => 'datetime',
         'approved_at' => 'datetime',
+        'deadline' => 'date',
     ];
 
     /**
@@ -43,6 +46,14 @@ class Order extends Model
     }
 
     /**
+     * Get the folders for this order.
+     */
+    public function folders(): HasMany
+    {
+        return $this->hasMany(Folder::class);
+    }
+
+    /**
      * Get the file claims for this order.
      */
     public function fileClaims(): HasMany
@@ -59,19 +70,27 @@ class Order extends Model
     }
 
     /**
-     * Get the count of completed files
+     * Get the count of approved files
      */
-    public function completedFilesCount(): int
+    public function approvedFilesCount(): int
     {
-        return $this->fileItems()->where('status', 'completed')->count();
+        return $this->fileItems()->where('status', 'approved')->count();
     }
 
     /**
-     * Get the count of claimed files
+     * Get the count of rejected files
      */
-    public function claimedFilesCount(): int
+    public function rejectedFilesCount(): int
     {
-        return $this->fileItems()->whereIn('status', ['claimed', 'processing'])->count();
+        return $this->fileItems()->where('status', 'rejected')->count();
+    }
+
+    /**
+     * Get the count of in-progress files
+     */
+    public function inProgressFilesCount(): int
+    {
+        return $this->fileItems()->where('status', 'in_progress')->count();
     }
 
     /**
@@ -83,10 +102,56 @@ class Order extends Model
     }
 
     /**
+     * Get order statistics
+     */
+    public function getStats(): array
+    {
+        return [
+            'total_files' => $this->totalFilesCount(),
+            'approved_files' => $this->approvedFilesCount(),
+            'pending_files' => $this->pendingFilesCount(),
+            'rejected_files' => $this->rejectedFilesCount(),
+        ];
+    }
+
+    /**
      * Check if all files are completed
      */
     public function isCompleted(): bool
     {
-        return $this->completedFilesCount() === $this->totalFilesCount() && $this->totalFilesCount() > 0;
+        return $this->approvedFilesCount() === $this->totalFilesCount() && $this->totalFilesCount() > 0;
+    }
+
+    /**
+     * Check if order is approved
+     */
+    public function isApproved(): bool
+    {
+        return $this->approved_at !== null;
+    }
+
+    /**
+     * Mark order as completed
+     */
+    public function markAsCompleted(): self
+    {
+        $this->update([
+            'status' => 'completed',
+            'completed_at' => now(),
+        ]);
+
+        return $this;
+    }
+
+    /**
+     * Mark order as approved
+     */
+    public function approve(): self
+    {
+        $this->update([
+            'approved_at' => now(),
+        ]);
+
+        return $this;
     }
 }

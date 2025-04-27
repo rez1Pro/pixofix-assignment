@@ -6,6 +6,7 @@ interface FileProps {
     assignedTo?: {
         id: number;
         name: string;
+        avatar?: string;
     } | null;
     path?: string;
 }
@@ -44,18 +45,31 @@ const downloadFile = (event: Event) => {
         </svg>
 
         <div class="flex-1 min-w-0">
-            <span class="text-sm font-medium">{{ file.name }}</span>
-            <div class="flex items-center space-x-2">
+            <div class="flex items-center">
+                <span class="text-sm font-medium">{{ file.name }}</span>
+
+                <!-- Assignment Badge - Always visible -->
+                <span v-if="file.assignedTo"
+                    class="ml-2 px-2 py-0.5 text-xs bg-indigo-100 text-indigo-800 rounded-full flex items-center">
+                    <template v-if="file.assignedTo.avatar">
+                        <img :src="file.assignedTo.avatar" :alt="file.assignedTo.name"
+                            class="w-4 h-4 rounded-full mr-1 object-cover" />
+                    </template>
+                    <svg v-else class="w-3 h-3 mr-1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"
+                        fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"
+                            clip-rule="evenodd" />
+                    </svg>
+                    {{ file.assignedTo.name }}
+                </span>
+            </div>
+
+            <div class="flex items-center space-x-2 mt-1">
                 <span v-if="file.status === 'completed'"
                     class="px-2 py-0.5 text-xs bg-green-100 text-green-800 rounded-full">Completed</span>
                 <span v-else-if="file.status === 'in_progress'"
                     class="px-2 py-0.5 text-xs bg-blue-100 text-blue-800 rounded-full">In Progress</span>
                 <span v-else class="px-2 py-0.5 text-xs bg-gray-100 text-gray-800 rounded-full">Pending</span>
-
-                <!-- Show assigned user if available -->
-                <span v-if="file.assignedTo" class="text-xs text-gray-600">
-                    Assigned to: <span class="font-medium">{{ file.assignedTo.name }}</span>
-                </span>
             </div>
         </div>
 

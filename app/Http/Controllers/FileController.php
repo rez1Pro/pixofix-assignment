@@ -3,29 +3,40 @@
 namespace App\Http\Controllers;
 
 use App\Models\FileItem;
+use App\Models\Folder;
 use App\Models\Order;
+use App\Models\Subfolder;
+use App\Models\User;
 use App\Services\FileBatchService;
 use App\Services\FileItemService;
 use App\Services\FileNamingService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use App\Services\OrderService;
 
 class FileController extends Controller
 {
     protected FileItemService $fileItemService;
     protected FileBatchService $fileBatchService;
     protected FileNamingService $fileNamingService;
+    protected OrderService $orderService;
 
     public function __construct(
         FileItemService $fileItemService,
         FileBatchService $fileBatchService,
-        FileNamingService $fileNamingService
+        FileNamingService $fileNamingService,
+        OrderService $orderService
     ) {
         $this->fileItemService = $fileItemService;
         $this->fileBatchService = $fileBatchService;
         $this->fileNamingService = $fileNamingService;
+        $this->orderService = $orderService;
     }
 
     /**
@@ -92,16 +103,15 @@ class FileController extends Controller
     /**
      * Download a file
      */
-    public function download(FileItem $file)
+    public function download(FileItem $file): BinaryFileResponse
     {
-        if (!Storage::exists($file->filepath)) {
+        $path = storage_path('app/' . $file->path);
+
+        if (!file_exists($path)) {
             abort(404, 'File not found');
         }
 
-        return Storage::download(
-            $file->filepath,
-            $file->original_filename
-        );
+        return response()->download($path, $file->name);
     }
 
     /**
@@ -123,13 +133,17 @@ class FileController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(FileItem $file)
+    public function destroy(FileItem $file): RedirectResponse
     {
-        $orderId = $file->order_id;
-        $this->fileItemService->deleteFile($file);
+        // Delete the file from storage
+        if (Storage::exists($file->path)) {
+            Storage::delete($file->path);
+        }
 
-        return redirect()->route('orders.show', $orderId)
-            ->with('success', 'File deleted successfully.');
+        // Delete the record
+        $file->delete();
+
+        return redirect()->back()->with('success', 'File deleted successfully.');
     }
 
     /**
@@ -261,5 +275,108 @@ class FileController extends Controller
         $groupedFiles = $this->fileItemService->getFileItemsGroupedByDirectory($order);
 
         return response()->json($groupedFiles);
+    }
+
+    /**
+     * Upload files to a folder.
+     */
+    public function uploadToFolder(Request $request, Folder $folder): RedirectResponse
+    {
+        $request->validate([
+            'files' => 'required|array',
+            'files.*' => 'required|file|max:10240', // 10MB max per file
+        ]);
+
+        $uploadedFiles = $this->orderService->uploadFilesToFolder($folder, $request->file('files'));
+
+        return redirect()->back()->with('success', count($uploadedFiles) . ' files uploaded successfully.');
+    }
+
+    /**
+     * Upload files to a subfolder.
+     */
+    public function uploadToSubfolder(Request $request, Subfolder $subfolder): RedirectResponse
+    {
+        $request->validate([
+            'files' => 'required|array',
+            'files.*' => 'required|file|max:10240', // 10MB max per file
+        ]);
+
+        $uploadedFiles = $this->orderService->uploadFilesToSubfolder($subfolder, $request->file('files'));
+
+        return redirect()->back()->with('success', count($uploadedFiles) . ' files uploaded successfully.');
+    }
+
+    /**
+     * Assign a file to the current user.
+     */
+    public function assignToSelf(Request $request, FileItem $file): RedirectResponse
+    {
+        $file->assignTo(Auth::user());
+
+        return redirect()->back()->with('success', 'File assigned to you successfully.');
+    }
+
+    /**
+     * Assign multiple files to the current user.
+     */
+    public function assignMultipleToSelf(Request $request): RedirectResponse
+    {
+        $request->validate([
+            'file_ids' => 'required|array',
+            'file_ids.*' => 'required|exists:file_items,id',
+        ]);
+
+        $user = Auth::user();
+        $count = 0;
+
+        foreach ($request->file_ids as $fileId) {
+            $file = FileItem::findOrFail($fileId);
+            $file->assignTo($user);
+            $count++;
+        }
+
+        return redirect()->back()->with('success', $count . ' files assigned to you successfully.');
+    }
+
+    /**
+     * Update the status of a file.
+     */
+    public function updateStatus(Request $request, FileItem $file): RedirectResponse
+    {
+        $request->validate([
+            'status' => 'required|in:pending,in_progress,approved,rejected',
+        ]);
+
+        $status = $request->status;
+
+        switch ($status) {
+            case 'pending':
+                $file->markAsPending();
+                break;
+            case 'in_progress':
+                $file->assignTo(Auth::user());
+                break;
+            case 'approved':
+                $file->markAsApproved();
+                break;
+            case 'rejected':
+                $file->markAsRejected();
+                break;
+        }
+
+        return redirect()->back()->with('success', 'File status updated successfully.');
+    }
+
+    /**
+     * Get file information.
+     */
+    public function getFileInfo(FileItem $file)
+    {
+        $file->load(['folder', 'subfolder', 'assignedTo']);
+
+        return response()->json([
+            'file' => $file,
+        ]);
     }
 }

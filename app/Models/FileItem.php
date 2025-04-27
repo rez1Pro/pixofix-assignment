@@ -12,19 +12,19 @@ class FileItem extends Model
 
     protected $fillable = [
         'order_id',
-        'filename',
-        'original_filename',
-        'filepath',
-        'directory_path',
+        'folder_id',
+        'subfolder_id',
+        'name',
+        'original_name',
+        'path',
         'file_type',
         'file_size',
-        'is_processed',
         'status',
         'assigned_to',
+        'created_at',
     ];
 
     protected $casts = [
-        'is_processed' => 'boolean',
         'file_size' => 'integer',
     ];
 
@@ -37,19 +37,59 @@ class FileItem extends Model
     }
 
     /**
+     * Get the folder that contains this file.
+     */
+    public function folder(): BelongsTo
+    {
+        return $this->belongsTo(Folder::class);
+    }
+
+    /**
+     * Get the subfolder that contains this file.
+     */
+    public function subfolder(): BelongsTo
+    {
+        return $this->belongsTo(Subfolder::class);
+    }
+
+    /**
      * Get the user that this file is assigned to.
      */
-    public function assignedUser(): BelongsTo
+    public function assignedTo(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assigned_to');
     }
 
     /**
-     * Check if this file is currently claimed
+     * Check if this file is currently in progress
      */
-    public function isClaimed(): bool
+    public function isInProgress(): bool
     {
-        return $this->status === 'claimed' || $this->status === 'processing';
+        return $this->status === 'in_progress';
+    }
+
+    /**
+     * Check if this file is currently approved
+     */
+    public function isApproved(): bool
+    {
+        return $this->status === 'approved';
+    }
+
+    /**
+     * Check if this file is currently rejected
+     */
+    public function isRejected(): bool
+    {
+        return $this->status === 'rejected';
+    }
+
+    /**
+     * Check if this file is currently pending
+     */
+    public function isPending(): bool
+    {
+        return $this->status === 'pending';
     }
 
     /**
@@ -57,36 +97,45 @@ class FileItem extends Model
      */
     public function getFullPath(): string
     {
-        return storage_path('app/' . $this->filepath);
+        return storage_path('app/' . $this->path);
     }
 
     /**
-     * Mark the file as claimed
+     * Mark the file as assigned to a user
      */
-    public function markAsClaimed(): self
-    {
-        $this->update(['status' => 'claimed']);
-        return $this;
-    }
-
-    /**
-     * Mark the file as being processed
-     */
-    public function markAsProcessing(): self
-    {
-        $this->update(['status' => 'processing']);
-        return $this;
-    }
-
-    /**
-     * Mark the file as completed
-     */
-    public function markAsCompleted(): self
+    public function assignTo(User $user): self
     {
         $this->update([
-            'status' => 'completed',
-            'is_processed' => true,
+            'status' => 'in_progress',
+            'assigned_to' => $user->id,
         ]);
+        return $this;
+    }
+
+    /**
+     * Mark the file as approved
+     */
+    public function markAsApproved(): self
+    {
+        $this->update(['status' => 'approved']);
+        return $this;
+    }
+
+    /**
+     * Mark the file as rejected
+     */
+    public function markAsRejected(): self
+    {
+        $this->update(['status' => 'rejected']);
+        return $this;
+    }
+
+    /**
+     * Mark the file as pending
+     */
+    public function markAsPending(): self
+    {
+        $this->update(['status' => 'pending']);
         return $this;
     }
 }

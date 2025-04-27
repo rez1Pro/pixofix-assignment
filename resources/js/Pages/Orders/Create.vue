@@ -19,6 +19,8 @@ interface FilePreview {
 const form = useForm({
     name: '',
     description: '',
+    customer_name: '',
+    deadline: '',
     files: [] as File[],
 });
 
@@ -153,6 +155,36 @@ const formatFileSize = (size: number): string => {
                             </div>
                             <p v-if="form.errors.description" class="mt-2 text-sm text-red-600 dark:text-red-400">
                                 {{ form.errors.description }}
+                            </p>
+                        </div>
+
+                        <!-- Customer Name -->
+                        <div>
+                            <label for="customer_name"
+                                class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                Customer Name
+                            </label>
+                            <div class="mt-1">
+                                <input id="customer_name" v-model="form.customer_name" type="text"
+                                    class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                    placeholder="Enter customer name" />
+                            </div>
+                            <p v-if="form.errors.customer_name" class="mt-2 text-sm text-red-600 dark:text-red-400">
+                                {{ form.errors.customer_name }}
+                            </p>
+                        </div>
+
+                        <!-- Deadline -->
+                        <div>
+                            <label for="deadline" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                Deadline
+                            </label>
+                            <div class="mt-1">
+                                <input id="deadline" v-model="form.deadline" type="date"
+                                    class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                            </div>
+                            <p v-if="form.errors.deadline" class="mt-2 text-sm text-red-600 dark:text-red-400">
+                                {{ form.errors.deadline }}
                             </p>
                         </div>
 

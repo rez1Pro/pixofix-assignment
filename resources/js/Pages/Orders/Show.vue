@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
 import { computed, nextTick, reactive, ref } from 'vue';
 
 // Import our component modules
@@ -23,6 +23,7 @@ interface FileItem {
     assignedTo?: {
         id: number;
         name: string;
+        avatar?: string;
     } | null;
 }
 
@@ -70,12 +71,12 @@ interface Order {
     id: number;
     name: string;
     status: string;
-    folders: Folder[];
-    stats: Stats;
     is_approved: boolean;
     order_number: string;
     customer_name: string;
     deadline: string;
+    folders: Folder[];
+    stats: Stats;
 }
 
 // Mock data for demonstration
@@ -103,14 +104,24 @@ const order = ref<Order>({
                             name: 'image1.jpg',
                             path: '/storage/images/image1.jpg',
                             status: 'approved',
-                            created_at: '2023-11-01'
+                            created_at: '2023-11-01',
+                            assignedTo: {
+                                id: 2,
+                                name: 'Jane Designer',
+                                avatar: 'https://i.pravatar.cc/150?img=5'
+                            }
                         },
                         {
                             id: 112,
                             name: 'image2.jpg',
                             path: '/storage/images/image2.jpg',
-                            status: 'pending',
-                            created_at: '2023-11-01'
+                            status: 'in_progress',
+                            created_at: '2023-11-01',
+                            assignedTo: {
+                                id: 1,
+                                name: 'Current User',
+                                avatar: 'https://i.pravatar.cc/150?img=11'
+                            }
                         }
                     ]
                 }
@@ -135,8 +146,13 @@ const order = ref<Order>({
                     id: 201,
                     name: 'edited-main.jpg',
                     path: '/storage/images/edited-main.jpg',
-                    status: 'pending',
-                    created_at: '2023-11-02'
+                    status: 'in_progress',
+                    created_at: '2023-11-02',
+                    assignedTo: {
+                        id: 3,
+                        name: 'Alex Editor',
+                        avatar: 'https://i.pravatar.cc/150?img=68'
+                    }
                 }
             ]
         }
@@ -456,7 +472,8 @@ const currentUser = {
     id: 1,
     name: 'Current User',
     email: 'user@example.com',
-    role: 'Designer'
+    role: 'Designer',
+    avatar: 'https://i.pravatar.cc/150?img=11' // Add a sample avatar URL
 };
 
 // Handle file assignment
@@ -498,7 +515,8 @@ const assignFilesToCurrentUser = (folderName: string, subfolderName: string | nu
                 file.status = 'in_progress'; // Change status to indicate assignment
                 file.assignedTo = {
                     id: currentUser.id,
-                    name: currentUser.name
+                    name: currentUser.name,
+                    avatar: currentUser.avatar
                 };
             }
         });
@@ -510,7 +528,8 @@ const assignFilesToCurrentUser = (folderName: string, subfolderName: string | nu
                 file.status = 'in_progress'; // Change status to indicate assignment
                 file.assignedTo = {
                     id: currentUser.id,
-                    name: currentUser.name
+                    name: currentUser.name,
+                    avatar: currentUser.avatar
                 };
             }
         });
@@ -576,6 +595,17 @@ const downloadFiles = (folderName: string, subfolderName: string | null, fileIds
         }
     });
 };
+
+// Add a delete order method
+const deleteOrder = () => {
+    if (confirm(`Are you sure you want to delete order ${order.value.name}? This action cannot be undone.`)) {
+        router.delete(`/orders/${order.value.id}`, {
+            onSuccess: () => {
+                // Redirect happens automatically
+            },
+        });
+    }
+};
 </script>
 
 <template>
@@ -601,6 +631,10 @@ const downloadFiles = (folderName: string, subfolderName: string | null, fileIds
                     <button v-else-if="order.status === 'in_progress'" @click="markOrderCompleted"
                         class="inline-flex items-center px-4 py-2 bg-blue-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-blue-700 focus:bg-blue-700 active:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition ease-in-out duration-150">
                         Mark as Completed
+                    </button>
+                    <button @click="deleteOrder"
+                        class="inline-flex items-center px-4 py-2 bg-red-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-red-700 focus:bg-red-700 active:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition ease-in-out duration-150">
+                        Delete Order
                     </button>
                 </div>
             </div>
@@ -640,5 +674,42 @@ const downloadFiles = (folderName: string, subfolderName: string | null, fileIds
         <!-- File Uploader -->
         <FileUploader :target-folder="uploadTargetFolder" :target-subfolder="uploadTargetSubfolder"
             :show-modal="showFileUploader" @close="closeFileUploader" @upload="handleFileUpload" />
+
+        <!-- New display components to show customer information -->
+        <div class="md:flex md:justify-between items-start mb-6">
+            <div>
+                <div class="flex items-center mb-2">
+                    <span class="text-sm text-gray-500 dark:text-gray-400 mr-2">Order Number:</span>
+                    <span class="text-sm font-medium text-gray-900 dark:text-white">{{ order.order_number }}</span>
+                </div>
+                <div class="flex items-center mb-2">
+                    <span class="text-sm text-gray-500 dark:text-gray-400 mr-2">Customer:</span>
+                    <span class="text-sm font-medium text-gray-900 dark:text-white">{{ order.customer_name || 'N/A'
+                    }}</span>
+                </div>
+                <div class="flex items-center">
+                    <span class="text-sm text-gray-500 dark:text-gray-400 mr-2">Deadline:</span>
+                    <span class="text-sm font-medium text-gray-900 dark:text-white">
+                        {{ order.deadline ? new Date(order.deadline).toLocaleDateString() : 'No deadline set' }}
+                    </span>
+                </div>
+            </div>
+            <div class="mt-4 md:mt-0">
+                <div class="flex flex-col sm:flex-row sm:space-x-2 space-y-2 sm:space-y-0">
+                    <Link :href="`/orders/${order.id}/edit`"
+                        class="inline-flex items-center px-4 py-2 bg-gray-800 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-gray-700 focus:bg-gray-700 active:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition ease-in-out duration-150">
+                    Edit Order
+                    </Link>
+                    <button v-if="order.status === 'completed'" @click="approveOrder"
+                        class="inline-flex items-center px-4 py-2 bg-green-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-green-700 focus:bg-green-700 active:bg-green-800 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition ease-in-out duration-150">
+                        Approve Order
+                    </button>
+                    <button v-else-if="order.status === 'in_progress'" @click="markOrderCompleted"
+                        class="inline-flex items-center px-4 py-2 bg-blue-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-blue-700 focus:bg-blue-700 active:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition ease-in-out duration-150">
+                        Mark as Completed
+                    </button>
+                </div>
+            </div>
+        </div>
     </AuthenticatedLayout>
 </template>

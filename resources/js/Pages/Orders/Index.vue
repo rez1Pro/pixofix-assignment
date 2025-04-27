@@ -11,6 +11,8 @@ interface OrderData {
     order_number: string;
     name: string;
     description: string | null;
+    customer_name: string | null;
+    deadline: string | null;
     created_by: number;
     status: string;
     completed_at: string | null;
@@ -77,10 +79,11 @@ const formatDate = (dateString: string): string => {
 
 const columns = reactive([
     { label: 'Order', key: 'order' },
+    { label: 'Customer', key: 'customer' },
     { label: 'Status', key: 'status' },
+    { label: 'Deadline', key: 'deadline' },
     { label: 'Progress', key: 'progress' },
     { label: 'Created', key: 'created_at' },
-    { label: 'Created By', key: 'creator' },
     { label: 'Actions', key: 'actions' },
 ]);
 
@@ -139,6 +142,15 @@ const filters = reactive([
                         </div>
                     </template>
 
+                    <template #customer="{ item }">
+                        <div v-if="item.customer_name" class="text-sm text-gray-900 dark:text-white">
+                            {{ item.customer_name }}
+                        </div>
+                        <div v-else class="text-sm text-gray-500 dark:text-gray-400">
+                            No customer specified
+                        </div>
+                    </template>
+
                     <template #status="{ item }">
                         <span :class="[
                             'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
@@ -146,6 +158,15 @@ const filters = reactive([
                         ]">
                             {{ getStatusText(item.status) }}
                         </span>
+                    </template>
+
+                    <template #deadline="{ item }">
+                        <div v-if="item.deadline" class="text-sm text-gray-900 dark:text-white">
+                            {{ new Date(item.deadline).toLocaleDateString() }}
+                        </div>
+                        <div v-else class="text-sm text-gray-500 dark:text-gray-400">
+                            No deadline
+                        </div>
                     </template>
 
                     <template #progress="{ item }">
