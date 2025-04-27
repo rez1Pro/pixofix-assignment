@@ -5,6 +5,11 @@ interface File {
     id: number;
     name: string;
     status: string;
+    assignedTo?: {
+        id: number;
+        name: string;
+    } | null;
+    path?: string;
 }
 
 interface Subfolder {
@@ -28,6 +33,10 @@ const emit = defineEmits<{
     addRootFolder: [];
     addSubfolder: [folderName: string];
     uploadFiles: [folderName: string];
+    assignFiles: [folderName: string, fileIds: number[]];
+    assignSubfolderFiles: [folderName: string, subfolderName: string, fileIds: number[]];
+    downloadFile: [folderName: string, fileId: number];
+    downloadSubfolderFile: [folderName: string, subfolderName: string, fileId: number];
 }>();
 
 const handleToggleFolder = (folderName: string) => {
@@ -51,6 +60,22 @@ const handleUploadToSubfolder = (folderPath: string) => {
     emit('uploadFiles', folderPath);
 };
 
+const handleAssignFiles = (folderName: string, fileIds: number[]) => {
+    emit('assignFiles', folderName, fileIds);
+};
+
+const handleAssignSubfolderFiles = (folderName: string, subfolderName: string, fileIds: number[]) => {
+    emit('assignSubfolderFiles', folderName, subfolderName, fileIds);
+};
+
+const handleDownloadFile = (folderName: string, fileId: number) => {
+    emit('downloadFile', folderName, fileId);
+};
+
+const handleDownloadSubfolderFile = (folderName: string, subfolderName: string, fileId: number) => {
+    emit('downloadSubfolderFile', folderName, subfolderName, fileId);
+};
+
 const addRootFolder = () => {
     emit('addRootFolder');
 };
@@ -71,7 +96,9 @@ const addRootFolder = () => {
             <FolderItem v-for="(folder, folderName) in folders" :key="folderName" :name="folderName" :folder="folder"
                 @toggle-folder="handleToggleFolder" @toggle-subfolder="handleToggleSubfolder"
                 @add-subfolder="handleAddSubfolder" @upload-files="handleUploadFiles"
-                @upload-to-subfolder="handleUploadToSubfolder" />
+                @upload-to-subfolder="handleUploadToSubfolder" @assign-files="handleAssignFiles"
+                @assign-subfolder-files="handleAssignSubfolderFiles" @download-file="handleDownloadFile"
+                @download-subfolder-file="handleDownloadSubfolderFile" />
         </div>
 
         <!-- Add root folder button -->

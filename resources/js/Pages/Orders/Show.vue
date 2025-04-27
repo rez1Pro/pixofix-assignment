@@ -18,8 +18,12 @@ interface FileItem {
     id: number;
     name: string;
     path: string;
-    status: 'pending' | 'approved' | 'rejected';
+    status: 'pending' | 'approved' | 'rejected' | 'in_progress';
     created_at: string;
+    assignedTo?: {
+        id: number;
+        name: string;
+    } | null;
 }
 
 interface Subfolder {
@@ -446,6 +450,132 @@ const refreshStats = () => {
     stats.pending_files = pending;
     stats.rejected_files = rejected;
 };
+
+// Add a currentUser object to simulate the logged-in user
+const currentUser = {
+    id: 1,
+    name: 'Current User',
+    email: 'user@example.com',
+    role: 'Designer'
+};
+
+// Handle file assignment
+const handleAssignFiles = (folderName: string, fileIds: number[]) => {
+    console.log(`Assigning ${fileIds.length} files from folder "${folderName}" to current user`);
+
+    // In a real application, you would make an API call to assign the files to the current user
+    assignFilesToCurrentUser(folderName, null, fileIds);
+
+    // Download the assigned files automatically
+    downloadFiles(folderName, null, fileIds);
+};
+
+const handleAssignSubfolderFiles = (folderName: string, subfolderName: string, fileIds: number[]) => {
+    console.log(`Assigning ${fileIds.length} files from subfolder "${subfolderName}" in folder "${folderName}" to current user`);
+
+    // In a real application, you would make an API call to assign the files to the current user
+    assignFilesToCurrentUser(folderName, subfolderName, fileIds);
+
+    // Download the assigned files automatically
+    downloadFiles(folderName, subfolderName, fileIds);
+};
+
+// Simulate assigning files to the current user
+const assignFilesToCurrentUser = (folderName: string, subfolderName: string | null, fileIds: number[]) => {
+    // Find the correct folder
+    const folder = order.value.folders.find(f => f.name === folderName);
+    if (!folder) return;
+
+    if (subfolderName) {
+        // Find the correct subfolder
+        const subfolder = folder.subfolders.find(sf => sf.name === subfolderName);
+        if (!subfolder) return;
+
+        // Update the files' status and assign to current user
+        fileIds.forEach(fileId => {
+            const file = subfolder.files.find(f => f.id === fileId);
+            if (file) {
+                file.status = 'in_progress'; // Change status to indicate assignment
+                file.assignedTo = {
+                    id: currentUser.id,
+                    name: currentUser.name
+                };
+            }
+        });
+    } else {
+        // Update files in the root folder
+        fileIds.forEach(fileId => {
+            const file = folder.files.find(f => f.id === fileId);
+            if (file) {
+                file.status = 'in_progress'; // Change status to indicate assignment
+                file.assignedTo = {
+                    id: currentUser.id,
+                    name: currentUser.name
+                };
+            }
+        });
+    }
+
+    // Update the file structure data
+    updateFileStructure();
+
+    // Show a success notification (in a real app)
+    alert(`${fileIds.length} files assigned to you successfully!`);
+};
+
+// Handle file download from root folder
+const handleDownloadFile = (folderName: string, fileId: number) => {
+    console.log(`Downloading file ${fileId} from folder "${folderName}"`);
+    downloadFiles(folderName, null, [fileId]);
+};
+
+// Handle file download from subfolder
+const handleDownloadSubfolderFile = (folderName: string, subfolderName: string, fileId: number) => {
+    console.log(`Downloading file ${fileId} from subfolder "${subfolderName}" in folder "${folderName}"`);
+    downloadFiles(folderName, subfolderName, [fileId]);
+};
+
+// Simulate downloading files
+const downloadFiles = (folderName: string, subfolderName: string | null, fileIds: number[]) => {
+    // Find the correct folder
+    const folder = order.value.folders.find(f => f.name === folderName);
+    if (!folder) return;
+
+    let filesToDownload = [];
+
+    if (subfolderName) {
+        // Find the correct subfolder
+        const subfolder = folder.subfolders.find(sf => sf.name === subfolderName);
+        if (!subfolder) return;
+
+        // Get files from the subfolder
+        filesToDownload = subfolder.files.filter(file => fileIds.includes(file.id));
+    } else {
+        // Get files from the root folder
+        filesToDownload = folder.files.filter(file => fileIds.includes(file.id));
+    }
+
+    // In a real application, you would initiate downloads for these files
+    // For demo purposes, we'll just log the files being downloaded
+    console.log('Downloading files:', filesToDownload);
+
+    // For demo: Create a simple download function
+    filesToDownload.forEach(file => {
+        // In a real app, you would use file.path to download
+        if (file.path) {
+            // For browser-based blob URLs, we can open them directly
+            if (file.path.startsWith('blob:')) {
+                window.open(file.path, '_blank');
+            } else {
+                // For server paths, you would typically hit an endpoint
+                // Something like: window.location.href = `/api/files/${file.id}/download`;
+                alert(`Downloading file: ${file.name}`);
+            }
+        } else {
+            alert(`Cannot download file: ${file.name} - No path available`);
+        }
+    });
+};
 </script>
 
 <template>
@@ -487,7 +617,10 @@ const refreshStats = () => {
                         <!-- File Structure Section -->
                         <FileStructure :folders="fileStructure" @toggle-folder="toggleFolder"
                             @toggle-subfolder="toggleSubfolder" @add-root-folder="openNewFolderModal"
-                            @add-subfolder="openSubfolderModal" @upload-files="openFileUploader" />
+                            @add-subfolder="openSubfolderModal" @upload-files="openFileUploader"
+                            @assign-files="handleAssignFiles" @assign-subfolder-files="handleAssignSubfolderFiles"
+                            @download-file="handleDownloadFile"
+                            @download-subfolder-file="handleDownloadSubfolderFile" />
                     </div>
                 </div>
             </div>

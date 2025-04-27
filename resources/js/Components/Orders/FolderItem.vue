@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import FileItem from './FileItem.vue';
 import SubfolderItem from './SubfolderItem.vue';
 
@@ -6,6 +7,11 @@ interface File {
     id: number;
     name: string;
     status: string;
+    assignedTo?: {
+        id: number;
+        name: string;
+    } | null;
+    path?: string;
 }
 
 interface Subfolder {
@@ -30,6 +36,10 @@ const emit = defineEmits<{
     addSubfolder: [folderName: string];
     uploadFiles: [folderName: string];
     uploadToSubfolder: [folderPath: string];
+    assignFiles: [folderName: string, fileIds: number[]];
+    assignSubfolderFiles: [folderName: string, subfolderName: string, fileIds: number[]];
+    downloadFile: [folderName: string, fileId: number];
+    downloadSubfolderFile: [folderName: string, subfolderName: string, fileId: number];
 }>();
 
 const toggleFolder = () => {
@@ -51,6 +61,49 @@ const uploadFiles = () => {
 const handleUploadToSubfolder = (parentFolder: string, subfolderName: string) => {
     const folderPath = `${parentFolder}/${subfolderName}`;
     emit('uploadToSubfolder', folderPath);
+};
+
+// File selection
+const selectedFileIds = ref<Set<number>>(new Set());
+const selectionMode = ref(false);
+
+const toggleSelectionMode = () => {
+    selectionMode.value = !selectionMode.value;
+    if (!selectionMode.value) {
+        selectedFileIds.value.clear();
+    }
+};
+
+const handleFileSelection = (fileId: number, selected: boolean) => {
+    if (selected) {
+        selectedFileIds.value.add(fileId);
+    } else {
+        selectedFileIds.value.delete(fileId);
+    }
+};
+
+const assignSelectedFilesToMe = () => {
+    if (selectedFileIds.value.size > 0) {
+        emit('assignFiles', props.name, Array.from(selectedFileIds.value));
+        // Reset selection after assigning
+        selectedFileIds.value.clear();
+        selectionMode.value = false;
+    }
+};
+
+// Handle subfolder assignment
+const handleSubfolderAssignment = (folderName: string, subfolderName: string, fileIds: number[]) => {
+    emit('assignSubfolderFiles', folderName, subfolderName, fileIds);
+};
+
+// Handle file downloads
+const handleFileDownload = (fileId: number) => {
+    emit('downloadFile', props.name, fileId);
+};
+
+// Handle subfolder file downloads
+const handleSubfolderFileDownload = (folderName: string, subfolderName: string, fileId: number) => {
+    emit('downloadSubfolderFile', folderName, subfolderName, fileId);
 };
 </script>
 
@@ -79,13 +132,16 @@ const handleUploadToSubfolder = (parentFolder: string, subfolderName: string) =>
             <!-- Subfolders -->
             <SubfolderItem v-for="(subfolder, subfolderName) in folder.subfolders" :key="subfolderName"
                 :name="subfolderName" :folder="subfolder" :parent-folder="name" @toggle="handleSubfolderToggle"
-                @upload-to-subfolder="handleUploadToSubfolder" />
+                @upload-to-subfolder="handleUploadToSubfolder" @assign-files="handleSubfolderAssignment"
+                @download-file="handleSubfolderFileDownload" />
 
             <!-- Root folder files -->
-            <FileItem v-for="file in folder.files" :key="file.id" :file="file" class="mt-2" />
+            <FileItem v-for="file in folder.files" :key="file.id" :file="file" :selectable="selectionMode"
+                :selected="selectedFileIds.has(file.id)" @select="handleFileSelection" @download="handleFileDownload"
+                class="mt-2" />
 
             <!-- Folder actions -->
-            <div class="mt-4">
+            <div class="mt-4 flex flex-wrap gap-2">
                 <button @click.stop="addSubfolder"
                     class="inline-flex items-center px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500">
                     <svg class="w-4 h-4 mr-1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"
@@ -97,7 +153,7 @@ const handleUploadToSubfolder = (parentFolder: string, subfolderName: string) =>
                     Add Subfolder
                 </button>
                 <button @click.stop="uploadFiles"
-                    class="ml-2 inline-flex items-center px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500">
+                    class="inline-flex items-center px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500">
                     <svg class="w-4 h-4 mr-1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"
                         fill="currentColor">
                         <path fill-rule="evenodd"
@@ -105,6 +161,30 @@ const handleUploadToSubfolder = (parentFolder: string, subfolderName: string) =>
                             clip-rule="evenodd" />
                     </svg>
                     Upload Files
+                </button>
+
+                <!-- Select files button -->
+                <button @click.stop="toggleSelectionMode"
+                    class="inline-flex items-center px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                    :class="{ 'bg-indigo-100': selectionMode }">
+                    <svg class="w-4 h-4 mr-1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"
+                        fill="currentColor">
+                        <path fill-rule="evenodd"
+                            d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"
+                            clip-rule="evenodd" />
+                    </svg>
+                    {{ selectionMode ? 'Cancel Selection' : 'Select Files' }}
+                </button>
+
+                <!-- Assign to me button - only shown when files are selected -->
+                <button v-if="selectionMode && selectedFileIds.size > 0" @click.stop="assignSelectedFilesToMe"
+                    class="inline-flex items-center px-3 py-1.5 text-sm border border-transparent rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    <svg class="w-4 h-4 mr-1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"
+                        fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"
+                            clip-rule="evenodd" />
+                    </svg>
+                    Assign to Me ({{ selectedFileIds.size }})
                 </button>
             </div>
         </div>

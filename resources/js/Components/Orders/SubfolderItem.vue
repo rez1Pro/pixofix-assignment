@@ -1,10 +1,16 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import FileItem from './FileItem.vue';
 
 interface File {
     id: number;
     name: string;
     status: string;
+    assignedTo?: {
+        id: number;
+        name: string;
+    } | null;
+    path?: string;
 }
 
 interface SubfolderProps {
@@ -21,6 +27,8 @@ const props = defineProps<SubfolderProps>();
 const emit = defineEmits<{
     toggle: [folderName: string, subfolderName: string];
     uploadToSubfolder: [parentFolder: string, subfolderName: string];
+    assignFiles: [parentFolder: string, subfolderName: string, fileIds: number[]];
+    downloadFile: [parentFolder: string, subfolderName: string, fileId: number];
 }>();
 
 const toggleSubfolder = () => {
@@ -29,6 +37,38 @@ const toggleSubfolder = () => {
 
 const uploadFiles = () => {
     emit('uploadToSubfolder', props.parentFolder, props.name);
+};
+
+// File selection
+const selectedFileIds = ref<Set<number>>(new Set());
+const selectionMode = ref(false);
+
+const toggleSelectionMode = () => {
+    selectionMode.value = !selectionMode.value;
+    if (!selectionMode.value) {
+        selectedFileIds.value.clear();
+    }
+};
+
+const handleFileSelection = (fileId: number, selected: boolean) => {
+    if (selected) {
+        selectedFileIds.value.add(fileId);
+    } else {
+        selectedFileIds.value.delete(fileId);
+    }
+};
+
+const assignSelectedFilesToMe = () => {
+    if (selectedFileIds.value.size > 0) {
+        emit('assignFiles', props.parentFolder, props.name, Array.from(selectedFileIds.value));
+        // Reset selection after assigning
+        selectedFileIds.value.clear();
+        selectionMode.value = false;
+    }
+};
+
+const handleDownloadFile = (fileId: number) => {
+    emit('downloadFile', props.parentFolder, props.name, fileId);
 };
 </script>
 
@@ -54,10 +94,12 @@ const uploadFiles = () => {
 
         <!-- Subfolder files (shown when expanded) -->
         <div v-if="folder.isOpen" class="pl-8 mt-2">
-            <FileItem v-for="file in folder.files" :key="file.id" :file="file" />
+            <!-- Files with checkboxes when selection mode is active -->
+            <FileItem v-for="file in folder.files" :key="file.id" :file="file" :selectable="selectionMode"
+                :selected="selectedFileIds.has(file.id)" @select="handleFileSelection" @download="handleDownloadFile" />
 
-            <!-- Upload button for subfolder -->
-            <div class="mt-3">
+            <!-- Actions toolbar -->
+            <div class="mt-3 flex flex-wrap gap-2">
                 <button @click.stop="uploadFiles"
                     class="inline-flex items-center px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500">
                     <svg class="w-4 h-4 mr-1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"
@@ -67,6 +109,30 @@ const uploadFiles = () => {
                             clip-rule="evenodd" />
                     </svg>
                     Upload Files
+                </button>
+
+                <!-- Select button -->
+                <button @click.stop="toggleSelectionMode"
+                    class="inline-flex items-center px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                    :class="{ 'bg-indigo-100': selectionMode }">
+                    <svg class="w-4 h-4 mr-1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"
+                        fill="currentColor">
+                        <path fill-rule="evenodd"
+                            d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"
+                            clip-rule="evenodd" />
+                    </svg>
+                    {{ selectionMode ? 'Cancel Selection' : 'Select Files' }}
+                </button>
+
+                <!-- Assign to me button - only shown when files are selected -->
+                <button v-if="selectionMode && selectedFileIds.size > 0" @click.stop="assignSelectedFilesToMe"
+                    class="inline-flex items-center px-3 py-1.5 text-sm border border-transparent rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    <svg class="w-4 h-4 mr-1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"
+                        fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"
+                            clip-rule="evenodd" />
+                    </svg>
+                    Assign to Me ({{ selectedFileIds.size }})
                 </button>
             </div>
         </div>
