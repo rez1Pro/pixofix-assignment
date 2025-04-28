@@ -1,3 +1,26 @@
+# APP PREVIEW
+## App Preview
+
+![Dashboard](https://github.com/rez1Pro/pixofix-assignment/tree/main/public/img/image.png)
+
+### Key Screens
+
+| Screen | Description |
+|--------|-------------|
+| Authentication | User login and registration with Laravel Sanctum |
+| Dashboard | Main application interface with analytics |
+| User Management | Admin interface for managing users |
+| Content Editor | Rich text editing with image upload capabilities |
+| Settings | Application configuration options |
+
+### Features Showcase
+
+- **Responsive Design**: Fully responsive interface built with Tailwind CSS
+- **Real-time Updates**: Using Laravel Echo and WebSockets
+- **Dark/Light Mode**: Theme switching with persistent user preferences
+- **Advanced Filtering**: Dynamic data filtering with Spatie Query Builder
+- **API Documentation**: Auto-generated API documentation with Swagger
+
 # Pixofix
 
 A Laravel application built with Laravel 12, Inertia.js, Vue 3, and Tailwind CSS.
