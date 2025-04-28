@@ -32,7 +32,7 @@ Laravel Sail provides a simple Docker-based environment for Laravel development.
 
 ```bash
 git clone https://github.com/rez1Pro/pixofix-assignment.git
-cd pixofix
+cd pixofix-assignment
 ```
 
 2. Create environment file:
@@ -46,12 +46,9 @@ cp .env.example .env
 4. Install PHP dependencies via Docker:
 
 ```bash
-docker run --rm \
-    -u "$(id -u):$(id -g)" \
-    -v "$(pwd):/var/www/html" \
-    -w /var/www/html \
-    laravelsail/php84-composer:latest \
-    composer install --ignore-platform-reqs
+docker compose run buid
+
+docker exec -i pixofix-assignment-laravel.test-1 /bin/bash composer install
 ```
 
 5. Start the Sail environment:
@@ -69,7 +66,7 @@ docker run --rm \
 7. Run migrations:
 
 ```bash
-./vendor/bin/sail artisan migrate
+./vendor/bin/sail artisan migrate -seed
 ```
 
 8. Install frontend dependencies and compile assets:
@@ -87,13 +84,13 @@ docker run --rm \
 
 ```bash
 git clone https://github.com/rez1Pro/pixofix-assignment.git
-cd pixofix
+cd pixofix-assignment
 ```
 
 2. Create environment file:
 
 ```bash
-cp .env.example .env
+cp .env.without_sail .env
 ```
 
 3. Configure your .env file with your database credentials and other settings.
@@ -164,46 +161,3 @@ When using Sail, the following services are available:
 - **MinIO**: S3-compatible object storage
 - **phpMyAdmin**: Web interface for MySQL (accessible at http://localhost:8001)
 - **MinIO Console**: Web interface for MinIO (accessible at http://localhost:8003)
-
-## Testing
-
-Run tests using PHPUnit:
-
-```bash
-# With Sail
-./vendor/bin/sail artisan test
-
-# Without Sail
-php artisan test
-```
-
-## Deployment
-
-For production deployment, make sure to:
-
-1. Set `APP_ENV=production` and `APP_DEBUG=false` in your .env file
-2. Generate optimized autoload files:
-
-```bash
-composer install --optimize-autoloader --no-dev
-```
-
-3. Build frontend assets for production:
-
-```bash
-npm run build
-# or using yarn
-yarn build
-```
-
-4. Cache configuration and routes:
-
-```bash
-php artisan config:cache
-php artisan route:cache
-php artisan view:cache
-```
-
-## License
-
-This project is licensed under the MIT License.
