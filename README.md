@@ -1,7 +1,7 @@
 # APP PREVIEW
 ## App Preview
 
-![Dashboard](https://github.com/rez1Pro/pixofix-assignment/tree/main/public/img/image.png)
+![Dashboard](https://github.com/rez1Pro/pixofix-assignment/blob/main/public/img/image.png)
 
 ### Key Screens
 
